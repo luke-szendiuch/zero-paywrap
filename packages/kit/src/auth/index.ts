@@ -1,4 +1,4 @@
-import { Challenge, type Credential } from "mppx";
+import { Challenge, Credential } from "mppx";
 import type { Hex } from "viem";
 import type { MppxInstance, PaywrapMpp } from "../mpp/mppx.js";
 
@@ -256,3 +256,28 @@ export const buildProofChallenge = (
 			...(opts.meta ? { meta: opts.meta } : {}),
 		}),
 	);
+
+/**
+ * Parse a `Payment` / `Authorization` header into an mppx credential.
+ *
+ * Framework-agnostic — no Node-only imports, safe for Cloudflare Workers.
+ * Adapters (fastify, hono, ...) re-export this so route code has a single
+ * symbol to reach for regardless of the runtime.
+ *
+ * mppx's `Credential.deserialize` expects the full `Payment <base64url>`
+ * form and extracts the scheme itself. Callers typically pass either
+ * header — an `Authorization: Payment <...>` or a bare `Payment: <...>` —
+ * and this helper normalizes both.
+ *
+ * Returns `null` on any parse failure. Route handlers should respond with
+ * a 402 challenge in that case, not a 400 — the credential shape is part
+ * of the 402 contract, not a schema error.
+ */
+export const extractCredential = (header: string | undefined): RawCredential | null => {
+	if (!header) return null;
+	try {
+		return Credential.deserialize(header.startsWith("Payment ") ? header : `Payment ${header}`);
+	} catch {
+		return null;
+	}
+};

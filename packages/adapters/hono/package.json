@@ -1,0 +1,32 @@
+{
+	"name": "@zerorun/paywrap-adapter-hono",
+	"version": "0.0.1",
+	"type": "module",
+	"description": "Hono adapter for @zerorun/paywrap — challenge-reply helpers + middleware for Workers / Node / Bun.",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": ["dist", "README.md"],
+	"scripts": {
+		"build": "tsc",
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@zerorun/paywrap": "workspace:*"
+	},
+	"peerDependencies": {
+		"hono": "^4.0.0"
+	},
+	"devDependencies": {
+		"@types/node": "^22.10.2",
+		"esbuild": "^0.24.0",
+		"hono": "^4.8.0",
+		"typescript": "^5.7.2",
+		"viem": "^2.21.55",
+		"vitest": "^2.1.8"
+	}
+}

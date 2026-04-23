@@ -1,0 +1,239 @@
+import type { VerifiedCredential } from "@zerorun/paywrap/auth";
+import { createPaywrapMpp, memoryStore } from "@zerorun/paywrap/mpp";
+import { TEMPO_CHAIN_ID, TEMPO_ESCROW } from "@zerorun/paywrap/mpp";
+import { buildVoucherCredential, channelIdFromLabel } from "@zerorun/paywrap/signing";
+import { seedChannel } from "@zerorun/paywrap/testing";
+import type { Hex } from "viem";
+import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
+import { describe, expect, it, vi } from "vitest";
+import { createHonoApp, mppGated } from "../src/index.js";
+
+const KNOWN_PK = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" as const;
+const REALM = "svc.example.com";
+const SECRET_KEY = "a".repeat(64);
+
+const makeApp = () => {
+	const mpp = createPaywrapMpp({
+		walletPrivateKey: KNOWN_PK,
+		publicBaseUrl: `https://${REALM}`,
+		mppSecretKey: SECRET_KEY,
+		tempoRpcUrl: "https://rpc.example/tempo",
+		store: memoryStore(),
+		channelStateTtl: Number.POSITIVE_INFINITY,
+	});
+	const ctx = {
+		mppx: mpp.mppx,
+		mppxChannelStore: mpp.channelStore,
+	};
+	const app = createHonoApp(ctx);
+	return { app, mpp };
+};
+
+describe("mppGated — registration", () => {
+	it("rejects registration without a scope", () => {
+		// @ts-expect-error — scope is required
+		expect(() => mppGated({ amount: 50_000n })).toThrow(/scope/);
+	});
+
+	it("rejects session/charge intent without amount", () => {
+		expect(() => mppGated({ scope: "x:1", intent: "session" })).toThrow(/amount/);
+		expect(() => mppGated({ scope: "x:1", intent: "charge" })).toThrow(/amount/);
+	});
+});
+
+describe("mppGated — missing / invalid credential", () => {
+	it("no auth header → 402 session challenge when amount provided", async () => {
+		const { app } = makeApp();
+		app.post("/paid", mppGated({ scope: "paid:1", amount: 50_000n }), (c) => c.json({ ok: true }));
+		const res = await app.request("/paid", { method: "POST" });
+		expect(res.status).toBe(402);
+		expect(res.headers.get("www-authenticate") ?? "").toMatch(/^Payment /);
+	});
+
+	it("no auth header → 402 proof challenge when amount omitted", async () => {
+		const { app } = makeApp();
+		app.get("/auth", mppGated({ scope: "read:1" }), (c) => c.json({ ok: true }));
+		const res = await app.request("/auth");
+		expect(res.status).toBe(402);
+		expect(res.headers.get("www-authenticate") ?? "").toMatch(/^Payment /);
+		const body = (await res.json()) as { detail?: string };
+		expect(body.detail).toBe("auth_required");
+	});
+
+	it("invalid credential header → 402", async () => {
+		const { app } = makeApp();
+		app.post("/paid", mppGated({ scope: "paid:1", amount: 50_000n }), (c) => c.json({ ok: true }));
+		const res = await app.request("/paid", {
+			method: "POST",
+			headers: { authorization: "Payment not-a-real-credential" },
+		});
+		expect(res.status).toBe(402);
+	});
+});
+
+describe("mppGated — valid credentials", () => {
+	const seedAndBuild = async (
+		mpp: ReturnType<typeof createPaywrapMpp>,
+		label: string,
+		scope: string,
+	) => {
+		const payer = privateKeyToAccount(generatePrivateKey());
+		const channelId = channelIdFromLabel(label);
+		await seedChannel({
+			channelStore: mpp.channelStore,
+			channelId,
+			payer: payer.address,
+			payee: mpp.account.address,
+			escrowContract: TEMPO_ESCROW,
+			chainId: TEMPO_CHAIN_ID,
+			deposit: 10_000_000n,
+		});
+		const header = await buildVoucherCredential({
+			payer,
+			channelId,
+			cumulativeAmount: 50_000n,
+			escrowContract: TEMPO_ESCROW,
+			chainId: TEMPO_CHAIN_ID,
+			recipient: mpp.account.address,
+			realm: REALM,
+			secretKey: SECRET_KEY,
+			scope,
+		});
+		return { payer, header };
+	};
+
+	it("valid session voucher → handler runs with c.var.payer populated", async () => {
+		const { app, mpp } = makeApp();
+		const { payer, header } = await seedAndBuild(mpp, "hono-gated-session", "paid:1");
+		app.post("/paid", mppGated({ scope: "paid:1", amount: 50_000n }), (c) =>
+			c.json({ payer: c.var.payer, hasCred: !!c.var.verifiedCredential }),
+		);
+		const res = await app.request("/paid", {
+			method: "POST",
+			headers: { authorization: header },
+		});
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { payer: string; hasCred: boolean };
+		expect(body.hasCred).toBe(true);
+		expect(body.payer.toLowerCase()).toBe(payer.address.toLowerCase());
+	});
+
+	it("scope mismatch → 402 (paid scope A, route scope B)", async () => {
+		const { app, mpp } = makeApp();
+		const { header } = await seedAndBuild(mpp, "hono-gated-scope", "scopeA:1");
+		app.post("/paid", mppGated({ scope: "scopeB:1", amount: 50_000n }), (c) =>
+			c.json({ ok: true }),
+		);
+		const res = await app.request("/paid", {
+			method: "POST",
+			headers: { authorization: header },
+		});
+		expect(res.status).toBe(402);
+	});
+
+	it("preCheck returning {ok:false} short-circuits — handler never runs, no verify", async () => {
+		const { app, mpp } = makeApp();
+		const verifySpy = vi.spyOn(mpp.mppx, "verifyCredential");
+		const { header } = await seedAndBuild(mpp, "hono-precheck-reject", "paid:1");
+		const handler = vi.fn((c: { json: (x: unknown) => Response }) => c.json({ ok: true }));
+		app.post(
+			"/paid",
+			mppGated({
+				scope: "paid:1",
+				amount: 50_000n,
+				preCheck: async ({ claimedPayer }) => ({
+					ok: false,
+					status: 409,
+					body: { error: "name_taken", claimed: claimedPayer },
+				}),
+			}),
+			handler as never,
+		);
+		const res = await app.request("/paid", {
+			method: "POST",
+			headers: { authorization: header },
+		});
+		expect(res.status).toBe(409);
+		const body = (await res.json()) as { error: string };
+		expect(body.error).toBe("name_taken");
+		expect(handler).not.toHaveBeenCalled();
+		expect(verifySpy).not.toHaveBeenCalled();
+	});
+
+	it("preCheck returning {ok:'already_done'} populates vars + runs handler without verify", async () => {
+		const { app, mpp } = makeApp();
+		const verifySpy = vi.spyOn(mpp.mppx, "verifyCredential");
+		const { payer, header } = await seedAndBuild(mpp, "hono-precheck-already", "paid:1");
+		const syntheticPayer = payer.address.toLowerCase() as Hex;
+		app.post(
+			"/paid",
+			mppGated({
+				scope: "paid:1",
+				amount: 50_000n,
+				preCheck: async ({ rawCredential }) => ({
+					ok: "already_done",
+					payer: syntheticPayer,
+					verifiedCredential: {
+						credential: rawCredential,
+					} as unknown as VerifiedCredential,
+				}),
+			}),
+			(c) => c.json({ payer: c.var.payer, hasCred: !!c.var.verifiedCredential }),
+		);
+		const res = await app.request("/paid", {
+			method: "POST",
+			headers: { authorization: header },
+		});
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as { payer: string; hasCred: boolean };
+		expect(body.payer).toBe(syntheticPayer);
+		expect(body.hasCred).toBe(true);
+		expect(verifySpy).not.toHaveBeenCalled();
+	});
+
+	it("preCheck returning {ok:true} proceeds to normal verify path", async () => {
+		const { app, mpp } = makeApp();
+		const { payer, header } = await seedAndBuild(mpp, "hono-precheck-ok", "paid:1");
+		const preCheck = vi.fn(async ({ claimedPayer }: { claimedPayer: Hex | null }) => {
+			expect(claimedPayer?.toLowerCase()).toBe(payer.address.toLowerCase());
+			return { ok: true as const };
+		});
+		app.post("/paid", mppGated({ scope: "paid:1", amount: 50_000n, preCheck }), (c) =>
+			c.json({ payer: c.var.payer, hasCred: !!c.var.verifiedCredential }),
+		);
+		const res = await app.request("/paid", {
+			method: "POST",
+			headers: { authorization: header },
+		});
+		expect(res.status).toBe(200);
+		expect(preCheck).toHaveBeenCalledOnce();
+		const body = (await res.json()) as { payer: string; hasCred: boolean };
+		expect(body.hasCred).toBe(true);
+		expect(body.payer.toLowerCase()).toBe(payer.address.toLowerCase());
+	});
+
+	it("preCheck throws → 500, handler not invoked", async () => {
+		const { app, mpp } = makeApp();
+		const verifySpy = vi.spyOn(mpp.mppx, "verifyCredential");
+		const { header } = await seedAndBuild(mpp, "hono-precheck-throw", "paid:1");
+		const handler = vi.fn((c: { json: (x: unknown) => Response }) => c.json({ ok: true }));
+		app.post(
+			"/paid",
+			mppGated({
+				scope: "paid:1",
+				amount: 50_000n,
+				preCheck: async () => {
+					throw new Error("boom");
+				},
+			}),
+			handler as never,
+		);
+		const res = await app.request("/paid", {
+			method: "POST",
+			headers: { authorization: header },
+		});
+		expect(res.status).toBe(500);
+		expect(handler).not.toHaveBeenCalled();
+		expect(verifySpy).not.toHaveBeenCalled();
+	});
+});

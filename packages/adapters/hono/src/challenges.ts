@@ -5,20 +5,18 @@ import {
 	extractCredential as kitExtractCredential,
 } from "@zerorun/paywrap/auth";
 import type { PaywrapMpp } from "@zerorun/paywrap/mpp";
+import type { Context } from "hono";
 
 /**
- * Framework-facing challenge helpers. The kit produces a
+ * Framework-facing challenge helpers for Hono. The kit produces a
  * `{status, headers, body}` descriptor from every challenge builder; this
- * module does the one-time mapping onto fastify's reply API so each
- * service's route code stays small and consistent.
+ * module does the one-time mapping onto Hono's `Context` response API so
+ * each service's route code stays small and consistent.
  *
- * Keep this file narrow. Anything here must be a fastify-specific
+ * Keep this file narrow. Anything here must be a Hono-specific
  * transformation of something the core kit already decides — no business
  * rules (pricing, scope strings, DB lookups) belong here.
  */
-
-// biome-ignore lint/suspicious/noExplicitAny: fastify reply generic — adapter does not care about the schema shape
-type Reply = any;
 
 type ChallengeDescriptor = {
 	status: number;
@@ -26,18 +24,24 @@ type ChallengeDescriptor = {
 	body: unknown;
 };
 
-const applyDescriptor = (reply: Reply, descriptor: ChallengeDescriptor) => {
-	let r = reply.status(descriptor.status);
+// Hono's Context has a loose response type; we don't care about the schema
+// shape the consumer binds.
+// biome-ignore lint/suspicious/noExplicitAny: consumer Hono types are opaque to the adapter
+type AnyContext = Context<any, any, any>;
+
+const applyDescriptor = (c: AnyContext, descriptor: ChallengeDescriptor): Response => {
 	for (const [name, value] of Object.entries(descriptor.headers)) {
-		r = r.header(name, value);
+		c.header(name, value);
 	}
-	return r.send(descriptor.body);
+	// Hono's `c.json` accepts any JSON-serializable body + a numeric status.
+	// `any` below because `c.json` types the status as a `StatusCode` union —
+	// we trust the kit to produce valid ones (402 for every challenge path).
+	// biome-ignore lint/suspicious/noExplicitAny: StatusCode union from hono is internal
+	return c.json(descriptor.body as any, descriptor.status as any);
 };
 
-// `AppLike` captures only the parts of a fastify instance this adapter
-// needs — `ctx.mppx`. We intentionally do NOT constrain `ctx` further:
-// each consumer decorates its own shape and we don't want to force a
-// mppx-shaped type here.
+// `AppLike` captures only the parts of a consumer ctx this adapter needs:
+// `ctx.mppx`. Everything else on ctx is opaque.
 type AppLike = { ctx: { mppx: PaywrapMpp["mppx"] } };
 
 /**
@@ -46,7 +50,7 @@ type AppLike = { ctx: { mppx: PaywrapMpp["mppx"] } };
  */
 export const sendSessionChallenge = async (
 	app: AppLike,
-	reply: Reply,
+	c: AnyContext,
 	opts: {
 		amount: bigint | string;
 		scope: string;
@@ -55,9 +59,9 @@ export const sendSessionChallenge = async (
 		suggestedDeposit?: bigint | string;
 		unitType?: string;
 	},
-) => {
+): Promise<Response> => {
 	const descriptor = await buildSessionChallenge(app.ctx.mppx, opts);
-	return applyDescriptor(reply, descriptor);
+	return applyDescriptor(c, descriptor);
 };
 
 /**
@@ -67,46 +71,41 @@ export const sendSessionChallenge = async (
  */
 export const sendChargeChallenge = async (
 	app: AppLike,
-	reply: Reply,
+	c: AnyContext,
 	opts: {
 		amount: bigint | string;
 		scope: string;
 		detail: string;
 		meta?: Record<string, string>;
 	},
-) => {
+): Promise<Response> => {
 	const descriptor = await buildChargeChallenge(app.ctx.mppx, opts);
-	return applyDescriptor(reply, descriptor);
+	return applyDescriptor(c, descriptor);
 };
 
 /**
  * Issue a 402 `tempo.charge` (amount="0") "proof credential" challenge.
  * Used by read/delete routes that need wallet-authz without payment.
- *
- * HMAC-binds `scope` into the challenge id so a credential signed for
- * one scope cannot replay against another route with a different scope.
  */
 export const sendProofChallenge = async (
 	app: AppLike,
-	reply: Reply,
+	c: AnyContext,
 	scope: string,
 	detail: string,
 	meta?: Record<string, string>,
-) => {
+): Promise<Response> => {
 	const descriptor = await buildProofChallenge(app.ctx.mppx, {
 		scope,
 		detail,
 		...(meta ? { meta } : {}),
 	});
-	return applyDescriptor(reply, descriptor);
+	return applyDescriptor(c, descriptor);
 };
 
 /**
  * Parse a `Payment` / `Authorization` header into an mppx credential.
  *
- * Re-exported from `@zerorun/paywrap/auth` so fastify consumers keep a
- * single adapter import surface. The implementation is pure / framework-
- * agnostic and lives in the kit — new adapters (hono, express, ...) should
- * re-export the same symbol.
+ * Re-exported from the kit so Hono consumers keep a single adapter import
+ * surface. Pure / framework-agnostic.
  */
 export const extractCredential = kitExtractCredential;
