@@ -12,59 +12,33 @@ import type { Hex } from "viem";
 import { sendChargeChallenge, sendProofChallenge, sendSessionChallenge } from "./challenges.js";
 
 /**
- * Consumers wire `mppGated` onto typed routes like so:
+ * Typed variables set by `mppGated` after verify:
  *
  *   const app = new Hono<{ Variables: PaywrapVariables }>();
  *   app.post('/paid', mppGated({ scope: 'x:1', amount: 50_000n }), (c) => {
  *     const payer = c.var.payer;            // typed Hex
  *     const cred  = c.var.verifiedCredential;
- *     ...
  *   });
- *
- * The branded `VerifiedCredential` is only produced by `verifyWithScope`
- * — anyone reading `c.var.verifiedCredential` can trust the scope check
- * already ran.
  */
 export type PaywrapVariables = {
 	payer: Hex;
 	verifiedCredential: VerifiedCredential;
 };
 
-/** USDC on Tempo has 6 decimals — hard-coded to avoid a kit import just for this. */
+/** USDC on Tempo has 6 decimals — hard-coded to avoid a kit import. */
 const USDC_DECIMALS = 6;
 
-/**
- * Intent controls which 402 challenge variant we issue when a request
- * arrives without a valid credential.
- *
- *   - `session`: paid channel-based flow (voucher ledger, extend semantics).
- *     Requires `amount`.
- *   - `charge` : paid single-shot flow (atomic settle, no channel).
- *     Requires `amount`.
- *   - `proof`  : zero-amount wallet-auth. No `amount` required.
- */
 export type MppIntent = "session" | "charge" | "proof";
 
-/**
- * Result of a `preCheck` callback. See the fastify adapter for the full
- * semantics — identical here; the only difference is the hook receives a
- * Hono `Context` instead of a fastify `request`/`reply` pair.
- */
+/** See fastify adapter — identical semantics. */
 export type MppGatedPreCheckResult =
 	| { ok: true }
 	| { ok: false; status: number; body: unknown }
 	| { ok: "already_done"; payer: Hex; verifiedCredential: VerifiedCredential };
 
 /**
- * Callback invoked AFTER credential parse + `claimedPayer` extraction,
- * BEFORE `verifyWithScope`.
- *
- * `claimedPayer` is NOT security-authoritative — it's a hint pulled from
- * the raw credential (channel store lookup for session vouchers, did:pkh
- * parse for charge/proof credentials). Use it to structure pre-verify
- * work (e.g. DB reads keyed on wallet) that the subsequent verify call
- * will validate. Never commit (settle, charge, grant) based on this
- * value alone.
+ * Runs AFTER credential parse + claimedPayer, BEFORE verify. `claimedPayer`
+ * is NOT authoritative — use only to structure pre-verify DB reads.
  */
 export type MppGatedPreCheck = (context: {
 	rawCredential: RawCredential;
@@ -74,32 +48,16 @@ export type MppGatedPreCheck = (context: {
 }) => Promise<MppGatedPreCheckResult>;
 
 export type MppGatedOptions = {
-	/** MANDATORY. HMAC-bound into the challenge id so credentials don't replay cross-route. */
 	scope: string;
-	/** Micro-USDC (6 decimals). Required for session/charge; omit for proof. */
 	amount?: bigint;
-	/** Intent. Default: "proof" when amount omitted, "session" when amount set. */
 	intent?: MppIntent;
-	/** Optional metadata surfaced on the 402 body (e.g. SKU + pricingVersion). */
 	meta?: Record<string, string>;
-	/** Optional human-readable reason included on the 402 body. Default: a stable per-intent string. */
 	detail?: string;
-	/** Session-only. Defaults to `amount` when omitted. */
 	suggestedDeposit?: bigint;
-	/** Session-only. Defaults to "request" at the mppx layer. */
 	unitType?: string;
-	/**
-	 * Optional pre-verify hook. Runs after credential parse, before
-	 * `verifyWithScope`. Critical for paid routes whose preconditions
-	 * must be checked BEFORE a charge settles — e.g. name-collision on
-	 * a "create" endpoint where a 409 must not cost the buyer.
-	 */
 	preCheck?: MppGatedPreCheck;
 };
 
-// `AppLike` mirrors the ctx `createHonoApp`'s consumers decorate. The
-// middleware reads `ctx.mppx` (required) + `ctx.mppxChannelStore` (required
-// for session vouchers + any flow that needs payer resolution).
 type AppLike = {
 	ctx: {
 		mppx: PaywrapMpp["mppx"];
@@ -125,9 +83,8 @@ const sendChallengeForIntent = (
 	if (intent === "proof") {
 		return sendProofChallenge(app, c, opts.scope, detail, opts.meta);
 	}
+	// Unreachable: `mppGated` rejects this at registration. Keeps type narrowing.
 	if (opts.amount === undefined) {
-		// Defensive — `mppGated` rejects this at registration time, so this
-		// should be unreachable. Kept to make the type-narrowing obvious.
 		throw new Error(`paywrap/mppGated: intent="${intent}" requires an amount`);
 	}
 	const humanAmount = formatUnits(opts.amount, USDC_DECIMALS);
@@ -154,27 +111,13 @@ const sendChallengeForIntent = (
 };
 
 /**
- * Hono middleware factory. Use directly on a route or group:
+ * Hono middleware. Pulls `Authorization`/`Payment` → parses credential →
+ * optional `preCheck` → `verifyWithScope` → resolves payer → sets
+ * `c.var.payer` + `c.var.verifiedCredential`. Any failure short-circuits
+ * with a 402 matching `intent`.
  *
- *   app.post('/paid', mppGated({ scope: 'paid:1', amount: 50_000n }), handler)
- *
- * The middleware:
- *
- *   1. Pulls the `Authorization` / `Payment` header off the request.
- *   2. Parses it as an mppx credential.
- *   3. Runs optional `preCheck` (pre-verify short-circuit + idempotency).
- *   4. Runs `verifyWithScope(mppx, credential, opts.scope)` — HMAC + scope.
- *   5. Resolves the payer via `payerFromCredential`.
- *   6. Sets `c.var.payer` + `c.var.verifiedCredential`, invokes `next()`.
- *
- * On any failure (missing header, parse error, verify failure, payer
- * resolution failure) we short-circuit with a 402 challenge matching the
- * configured intent — Hono's convention: returning a response from a
- * middleware without calling `next()` stops the chain.
- *
- * Consumer's ctx must carry `mppx` + `mppxChannelStore`; we read them from
- * `c.get('paywrapApp')` (set by `createHonoApp`) OR `c.env.paywrapApp` as
- * fallback. If neither is present, we throw — a clear setup error.
+ * Consumer's ctx must carry `mppx` + `mppxChannelStore`, reached via
+ * `c.get('paywrapApp')` (set by `createHonoApp` or a prior middleware).
  */
 export const mppGated = (
 	opts: MppGatedOptions,
@@ -224,14 +167,11 @@ export const mppGated = (
 				return c.json(result.body as any, result.status as any);
 			}
 			if (result.ok === "already_done") {
-				// Set typed vars and invoke handler. `c.var.<key>` type-narrows
-				// via the `Variables` binding from the middleware return type.
 				c.set("payer", result.payer);
 				c.set("verifiedCredential", result.verifiedCredential);
 				await next();
 				return;
 			}
-			// result.ok === true — fall through to verify.
 		}
 
 		let verified: VerifiedCredential;
@@ -259,12 +199,6 @@ export const mppGated = (
 	};
 };
 
-/**
- * Locate the paywrap AppLike. `createHonoApp` registers a pre-middleware
- * that sets `c.set('paywrapApp', { ctx })` on every request; consumers
- * using that helper get wiring for free. Consumers who construct their
- * own Hono instance can set the same variable manually.
- */
 const resolveApp = (c: AnyContext): AppLike => {
 	const fromVar = c.get("paywrapApp") as AppLike | undefined;
 	if (fromVar) return fromVar;

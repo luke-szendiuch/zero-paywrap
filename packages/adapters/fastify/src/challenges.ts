@@ -6,18 +6,11 @@ import {
 } from "@zerorun/paywrap/auth";
 import type { PaywrapMpp } from "@zerorun/paywrap/mpp";
 
-/**
- * Framework-facing challenge helpers. The kit produces a
- * `{status, headers, body}` descriptor from every challenge builder; this
- * module does the one-time mapping onto fastify's reply API so each
- * service's route code stays small and consistent.
- *
- * Keep this file narrow. Anything here must be a fastify-specific
- * transformation of something the core kit already decides — no business
- * rules (pricing, scope strings, DB lookups) belong here.
- */
+// The kit produces a `{status, headers, body}` descriptor from every challenge
+// builder; this module maps that onto fastify's reply API. No business rules
+// (pricing, scope, DB) belong here.
 
-// biome-ignore lint/suspicious/noExplicitAny: fastify reply generic — adapter does not care about the schema shape
+// biome-ignore lint/suspicious/noExplicitAny: fastify reply generic — adapter does not care about schema shape
 type Reply = any;
 
 type ChallengeDescriptor = {
@@ -34,16 +27,11 @@ const applyDescriptor = (reply: Reply, descriptor: ChallengeDescriptor) => {
 	return r.send(descriptor.body);
 };
 
-// `AppLike` captures only the parts of a fastify instance this adapter
-// needs — `ctx.mppx`. We intentionally do NOT constrain `ctx` further:
-// each consumer decorates its own shape and we don't want to force a
-// mppx-shaped type here.
+// `AppLike` is the minimum slice of a fastify instance the adapter reads —
+// `ctx.mppx`. Consumer's ctx shape is otherwise opaque.
 type AppLike = { ctx: { mppx: PaywrapMpp["mppx"] } };
 
-/**
- * Issue a 402 `tempo.session` paid challenge. Used by POST / extend
- * routes so clients know what channel-open invitation to respond to.
- */
+/** 402 `tempo.session` paid challenge — POST / extend routes. */
 export const sendSessionChallenge = async (
 	app: AppLike,
 	reply: Reply,
@@ -55,16 +43,9 @@ export const sendSessionChallenge = async (
 		suggestedDeposit?: bigint | string;
 		unitType?: string;
 	},
-) => {
-	const descriptor = await buildSessionChallenge(app.ctx.mppx, opts);
-	return applyDescriptor(reply, descriptor);
-};
+) => applyDescriptor(reply, await buildSessionChallenge(app.ctx.mppx, opts));
 
-/**
- * Issue a 402 `tempo.charge` single-shot paid challenge. Used by paid
- * routes that don't need session semantics (pay-per-call, no voucher
- * ledger).
- */
+/** 402 `tempo.charge` single-shot paid challenge — no voucher ledger. */
 export const sendChargeChallenge = async (
 	app: AppLike,
 	reply: Reply,
@@ -74,39 +55,24 @@ export const sendChargeChallenge = async (
 		detail: string;
 		meta?: Record<string, string>;
 	},
-) => {
-	const descriptor = await buildChargeChallenge(app.ctx.mppx, opts);
-	return applyDescriptor(reply, descriptor);
-};
+) => applyDescriptor(reply, await buildChargeChallenge(app.ctx.mppx, opts));
 
-/**
- * Issue a 402 `tempo.charge` (amount="0") "proof credential" challenge.
- * Used by read/delete routes that need wallet-authz without payment.
- *
- * HMAC-binds `scope` into the challenge id so a credential signed for
- * one scope cannot replay against another route with a different scope.
- */
+/** 402 `tempo.charge` (amount="0") proof challenge — wallet-auth on GET/DELETE. */
 export const sendProofChallenge = async (
 	app: AppLike,
 	reply: Reply,
 	scope: string,
 	detail: string,
 	meta?: Record<string, string>,
-) => {
-	const descriptor = await buildProofChallenge(app.ctx.mppx, {
-		scope,
-		detail,
-		...(meta ? { meta } : {}),
-	});
-	return applyDescriptor(reply, descriptor);
-};
+) =>
+	applyDescriptor(
+		reply,
+		await buildProofChallenge(app.ctx.mppx, {
+			scope,
+			detail,
+			...(meta ? { meta } : {}),
+		}),
+	);
 
-/**
- * Parse a `Payment` / `Authorization` header into an mppx credential.
- *
- * Re-exported from `@zerorun/paywrap/auth` so fastify consumers keep a
- * single adapter import surface. The implementation is pure / framework-
- * agnostic and lives in the kit — new adapters (hono, express, ...) should
- * re-export the same symbol.
- */
+/** Re-export so fastify consumers keep a single import surface. */
 export const extractCredential = kitExtractCredential;
