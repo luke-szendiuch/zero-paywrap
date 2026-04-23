@@ -108,12 +108,25 @@ import type { Hex } from "viem";
  * the channel in one tx — seller pays gas out of the wallet's USDC balance
  * (Tempo chain object has \`feeToken: USDC\` wired in by the kit).
  *
- * This scaffold cron has NO database — it has no way to enumerate channels.
- * Replace the empty \`channels\` list with \`await yourDb.listDistinctChannels()\`
- * once you've wired a Thing model with a \`channel_id\` column (see zero-redis-
- * integration's provision-service#listDistinctChannels for the reference).
+ * IMPORTANT: this scaffold stub returns an empty channel list. Nothing
+ * will settle until you wire a real query. The job is STILL scheduled in
+ * worker/start.ts so you remember to come back here — otherwise vouchers
+ * accumulate in the mppx store and the channel never closes on-chain.
+ *
+ * What to do:
+ *   1. Add a \`channel_id\` (or similar) column to your Thing model.
+ *   2. Expose a service method (DB-owning, not in this file) that returns
+ *      the distinct \`Hex\` channel ids for all open/active Things, e.g.
+ *      \`thingService.listDistinctOpenChannels(): Promise<Hex[]>\`.
+ *   3. Plumb that service into \`makeSessionSettleJob\` via the worker
+ *      runtime (see worker/start.ts) and replace the TODO below.
+ *
+ * See zero-redis-integration's \`ProvisionService.listDistinctChannels\`
+ * for a working reference.
  */
 export const makeSessionSettleJob = (mpp: PaywrapMpp) => async () => {
+\t// TODO: implement a DB query returning open channel ids — e.g.
+\t//   const channels = await ctx.services.things.listDistinctOpenChannels();
 \tconst channels: Hex[] = [];
 \tfor (const channelId of channels) {
 \t\ttry {

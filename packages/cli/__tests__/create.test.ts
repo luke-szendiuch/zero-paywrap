@@ -219,6 +219,25 @@ describe("runCreate (charge intent)", () => {
 		const things = readFileSync(join(target, "src/routes/things.ts"), "utf8");
 		expect(things.includes("/extend")).toBe(false);
 	});
+
+	it("imports buildChargeChallenge (NOT buildSessionChallenge) for charge intent", async () => {
+		const prompter = makeStubPrompter({
+			serviceName: "charge-svc",
+			intent: "charge",
+			priceUsdc: "0.02",
+			scope: "charge-svc:1",
+			durationSeconds: "2592000",
+			framework: "fastify",
+			storage: "none",
+			queue: "none",
+			hosting: "skip",
+			generateWalletNow: false,
+		});
+		await runCreate(target, { prompter, skipInstall: true });
+		const things = readFileSync(join(target, "src/routes/things.ts"), "utf8");
+		expect(things.includes("buildChargeChallenge")).toBe(true);
+		expect(things.includes("buildSessionChallenge")).toBe(false);
+	});
 });
 
 describe("runCreate (minimal: fastify + no storage + no queue)", () => {

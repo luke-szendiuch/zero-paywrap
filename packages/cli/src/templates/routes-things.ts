@@ -9,9 +9,10 @@ export const routesThingsTemplate = (config: ScaffoldConfig): string => {
 	const priceMicro = Math.round(Number(config.priceUsdc) * 1_000_000) || 20_000;
 	const isSession = config.intent === "session";
 
+	const paidBuilderImport = isSession ? "buildSessionChallenge" : "buildChargeChallenge";
 	return `import {
+\t${paidBuilderImport},
 \tbuildProofChallenge,
-\tbuildSessionChallenge,
 \tpayerFromCredential,
 } from "@zerorun/paywrap/auth";
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
@@ -58,10 +59,8 @@ ${
 \treply: any,
 \tdetail: string,
 ) => {
-\tconst challenge = await buildSessionChallenge(app.ctx.mppx, {
+\tconst challenge = await buildChargeChallenge(app.ctx.mppx, {
 \t\tamount: formatUnits(PRICE_USDC_MICRO, 6),
-\t\tsuggestedDeposit: formatUnits(PRICE_USDC_MICRO, 6),
-\t\tunitType: "request",
 \t\tscope: SCOPE,
 \t\tdetail,
 \t});
