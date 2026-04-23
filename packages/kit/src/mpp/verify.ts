@@ -1,4 +1,4 @@
-import type { VerifiedCredential } from "../auth/index.js";
+import { type RawCredential, VERIFIED, type VerifiedCredential } from "../auth/index.js";
 import type { MppxInstance } from "./mppx.js";
 
 /**
@@ -10,15 +10,26 @@ import type { MppxInstance } from "./mppx.js";
  * `scope="read-only"` would otherwise authenticate a POST that guards
  * `scope="paid-write"`.
  *
- * Returns the verified credential on success; lets mppx's error bubble on
- * failure (same semantics as the underlying call, different signature).
+ * This is the ONLY factory for `VerifiedCredential`. The branded type
+ * prevents callers from handing a raw (unverified) credential to any
+ * downstream helper (e.g. `payerFromCredential`) — the TypeScript checker
+ * rejects it unless it came through this function.
+ *
+ * Returns the branded verified credential on success; lets mppx's error
+ * bubble on failure (same semantics as the underlying call, different
+ * signature).
  */
 export const verifyWithScope = async (
 	mppx: MppxInstance,
-	credential: unknown,
+	credential: RawCredential,
 	scope: string,
 ): Promise<VerifiedCredential> => {
-	return (await mppx.verifyCredential(credential, { scope })) as VerifiedCredential;
+	// mppx.verifyCredential's return shape varies by method (channel state for
+	// session, signer info for charge). Callers that need the payload work
+	// against the original credential — we brand THAT so downstream helpers
+	// know the scope check passed.
+	await mppx.verifyCredential(credential, { scope });
+	return { [VERIFIED]: true, credential } as VerifiedCredential;
 };
 
 /**

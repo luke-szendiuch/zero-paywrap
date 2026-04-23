@@ -1,9 +1,23 @@
-import { Challenge, Credential } from "mppx";
+import { Challenge, type Credential } from "mppx";
 import type { Hex } from "viem";
 import type { MppxInstance, PaywrapMpp } from "../mpp/mppx.js";
 
 // biome-ignore lint/suspicious/noExplicitAny: Credential is generic over payload
-export type VerifiedCredential = ReturnType<typeof Credential.deserialize<any>>;
+export type RawCredential = ReturnType<typeof Credential.deserialize<any>>;
+
+/**
+ * Branding symbol. Only the kit's `verifyWithScope` factory can produce a
+ * `VerifiedCredential` — no external code can synthesize the symbol key. This
+ * lets TypeScript reject any callsite that tries to hand a raw
+ * `Credential.deserialize` result to a function that expects a verified one,
+ * closing the footgun where a caller could forget the scope-verify step.
+ */
+export const VERIFIED: unique symbol = Symbol("paywrap.verified");
+
+export type VerifiedCredential = {
+	readonly [VERIFIED]: true;
+	readonly credential: RawCredential;
+};
 
 /**
  * `source` on a proof credential is a `did:pkh` with the format
@@ -31,8 +45,9 @@ const PROOF_SOURCE_RE = /^did:pkh:eip155:\d+:(0x[0-9a-fA-F]{40})$/;
  */
 export const payerFromCredential = async (
 	channelStore: PaywrapMpp["channelStore"],
-	credential: VerifiedCredential,
+	verified: VerifiedCredential,
 ): Promise<Hex | null> => {
+	const credential = verified.credential;
 	const payload = credential.payload as { channelId?: Hex; type?: string };
 	if (payload?.channelId) {
 		try {
@@ -195,5 +210,3 @@ export const buildProofChallenge = (
 			...(opts.meta ? { meta: opts.meta } : {}),
 		}),
 	);
-
-export { Credential, Challenge };

@@ -3,6 +3,7 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import type { VerifiedCredential } from "../src/auth/index.js";
 import {
+	VERIFIED,
 	buildChargeChallenge,
 	buildProofChallenge,
 	buildSessionChallenge,
@@ -25,15 +26,19 @@ const makeMppx = () =>
 		store: memoryStore(),
 	}).mppx;
 
-// `VerifiedCredential` is the shape mppx returns from `verifyCredential()`.
-// For unit purposes we build a minimally-compatible object — the function
-// under test only reads `payload.channelId` and `source`.
-const fakeCredential = (payload: Record<string, unknown>, source?: string): VerifiedCredential =>
-	({
+// `VerifiedCredential` is a branded wrapper around the raw deserialized
+// credential — only `verifyWithScope` produces one in real code. For unit
+// purposes we construct it directly; `payerFromCredential` reads
+// `.credential.payload` and `.credential.source`.
+const fakeCredential = (payload: Record<string, unknown>, source?: string): VerifiedCredential => ({
+	[VERIFIED]: true,
+	credential: {
 		challenge: {} as unknown,
 		payload,
 		...(source !== undefined ? { source } : {}),
-	}) as unknown as VerifiedCredential;
+		// biome-ignore lint/suspicious/noExplicitAny: RawCredential is a generic mppx shape
+	} as any,
+});
 
 describe("auth.payerFromCredential", () => {
 	it("returns the seeded payer for a voucher credential (channelId path)", async () => {
