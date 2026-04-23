@@ -70,24 +70,44 @@ export type ChallengeErrorResponse = {
 /**
  * Build a 402 `tempo.session` challenge — the paid path. Call this from
  * paid routes when the request arrives without a valid credential. The
- * client opens a channel (the voucher covers `amountUsdcMicro`) and retries.
+ * client opens a channel (the voucher covers `amount`) and retries.
  *
  * `scope` is HMAC-bound into the challenge id, so a credential signed for
  * one scope cannot be replayed against another route that requires a
  * different scope.
+ *
+ * `amount` is passed through to mppx as-is. mppx's session method expects
+ * a HUMAN-decimal string (e.g. `"0.02"` for 2 cents USDC) — it calls
+ * `parseUnits(amount, decimals)` internally. If you have raw micro units,
+ * format with `formatUnits(micro, 6)` before passing.
+ *
+ * `suggestedDeposit` is the amount the client should fund the channel
+ * with — typically equal to `amount` for one-request services, higher for
+ * multi-request sessions. Surfaced on the 402 body so clients know how
+ * much to escrow. Defaults to `amount`.
+ *
+ * `unitType` mirrors mppx's `tempo.session` `unitType` option (defaults
+ * to `"request"` at method registration; passing here is usually
+ * redundant but supported for per-challenge overrides).
  */
 export const buildSessionChallenge = async (
 	mppx: MppxInstance,
 	opts: {
-		amountUsdcMicro: bigint | string;
+		amount: bigint | string;
 		scope: string;
 		detail: string;
 		meta?: Record<string, string>;
+		suggestedDeposit?: bigint | string;
+		unitType?: string;
 	},
 ): Promise<ChallengeResponse | ChallengeErrorResponse> => {
 	try {
+		const amountStr = opts.amount.toString();
+		const depositStr = (opts.suggestedDeposit ?? opts.amount).toString();
 		const challenge = await mppx.challenge.tempo.session({
-			amount: opts.amountUsdcMicro.toString(),
+			amount: amountStr,
+			suggestedDeposit: depositStr,
+			...(opts.unitType !== undefined ? { unitType: opts.unitType } : {}),
 			scope: opts.scope,
 			...(opts.meta ? { meta: opts.meta } : {}),
 		});
