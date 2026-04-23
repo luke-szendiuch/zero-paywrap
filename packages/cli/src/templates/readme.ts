@@ -2,29 +2,42 @@ import type { ScaffoldConfig } from "../lib/scaffold-config.js";
 
 export const readmeTemplate = (config: ScaffoldConfig): string => {
 	const priceUsdc = config.priceUsdc;
-	const steps: string[] = [];
-	steps.push("1. Copy `.env.example` to `.env` and fill in required values.");
+	// Collect step bodies unnumbered, then number sequentially so skipped
+	// optional steps don't leave gaps (`1, 2, 5, 6`).
+	const stepBodies: string[] = [];
+	stepBodies.push("Copy `.env.example` to `.env` and fill in required values.");
 	if (!config.wallet) {
-		steps.push(
-			"2. Generate a wallet: `npx @zerorun/paywrap-cli generate-wallet`. Paste into `.env`.",
+		stepBodies.push(
+			"Generate a wallet: `npx @zerorun/paywrap-cli generate-wallet`. Paste into `.env`.",
 		);
 	} else {
-		steps.push(
-			`2. Wallet already generated: \`${config.wallet.address}\` (private key is in your \`.env\`).`,
+		stepBodies.push(
+			`Wallet already generated: \`${config.wallet.address}\` (private key is in your \`.env\`).`,
 		);
 	}
 	if (config.intent === "session") {
-		steps.push(
-			"3. Prefund the wallet with ~0.05 USDC on Tempo: `npx @zerorun/paywrap-cli prefund <address>`. Session intent needs this because the seller pays gas on channel close.",
+		stepBodies.push(
+			"Prefund the wallet with ~0.05 USDC on Tempo: `npx @zerorun/paywrap-cli prefund <address>`. Session intent needs this because the seller pays gas on channel close.",
 		);
 	}
 	if (config.storage === "postgres-drizzle") {
-		steps.push("4. Generate and run migrations: `pnpm db:generate && pnpm db:migrate`.");
+		stepBodies.push("Generate and run migrations: `pnpm db:generate && pnpm db:migrate`.");
 	}
-	steps.push("5. Start: `pnpm dev`.");
-	steps.push(
-		"6. Publish to Zero once public: `npx @zerorun/paywrap-cli register` (needs `ZERO_API_URL`, `PUBLIC_BASE_URL`, `WALLET_PRIVATE_KEY`).",
+	stepBodies.push("Start: `pnpm dev`.");
+	stepBodies.push(
+		"Publish to Zero once public: `npx @zerorun/paywrap-cli register` (needs `ZERO_API_URL`, `PUBLIC_BASE_URL`, `WALLET_PRIVATE_KEY`).",
 	);
+	const steps = stepBodies.map((body, i) => `${i + 1}. ${body}`);
+
+	// Example invocation against the scaffolded endpoint. For both intents
+	// the buyer first hits the endpoint (402) then retries with a credential
+	// minted from that challenge — `zero fetch` handles both legs.
+	const exampleMethod = config.intent === "session" ? "POST" : "POST";
+	const exampleCurl = `# First call returns 402 with a Payment challenge in the www-authenticate header.
+curl -X ${exampleMethod} "$PUBLIC_BASE_URL/v1/things" -i
+
+# The \`zero\` CLI (buyer-side) handles the challenge + retry in one go:
+zero fetch ${exampleMethod} "$PUBLIC_BASE_URL/v1/things"`;
 
 	return `# ${config.serviceName}
 
@@ -35,7 +48,7 @@ Paid API service scaffolded with \`@zerorun/paywrap-cli\`.
 - **Scope:** \`${config.scope}\`
 - **Session duration:** ${config.durationSeconds} seconds
 - **Framework:** ${config.framework}
-- **Storage:** ${config.storage}
+- **Storage:** ${config.intent === "charge" ? "none (stateless — upstream is source of truth)" : config.storage}
 - **Queue:** ${config.queue}
 
 ## Quickstart
@@ -50,7 +63,7 @@ ${steps.join("\n")}
 - \`src/routes/health.ts\` — \`/healthz\` aggregated via kit
 - \`src/routes/wellknown.ts\` — \`/.well-known/paywrap.json\`
 - \`src/core/env.ts\` — zod env schema
-${config.storage === "postgres-drizzle" ? "- `src/models/thing.ts` — Drizzle schema\n- `src/db/` — client + migrator\n" : ""}${config.queue === "bullmq-redis" ? "- `src/worker/` — BullMQ worker + cron drivers\n" : ""}
+${config.intent === "charge" ? "- `src/services/thing-client.ts` — typed client for your upstream provider (source of truth for resources)\n" : ""}${config.intent === "session" && config.storage === "postgres-drizzle" ? "- `src/models/thing.ts` — Drizzle schema\n- `src/db/` — client + migrator\n" : ""}${config.queue === "bullmq-redis" ? "- `src/worker/` — BullMQ worker + cron drivers\n" : ""}
 
 ## Ops commands
 
@@ -64,5 +77,19 @@ npx @zerorun/paywrap-cli register                  # publish to Zero catalog
 The scaffold stops at the \`// TODO: implement\` markers. Business logic — your
 actual resource, persistence, upstream API calls — lives in your service repo
 and is never dragged into \`@zerorun/paywrap\`.
+${
+	config.intent === "charge"
+		? `\nThis scaffold is **stateless** — your upstream provider (Netlify, R2,
+whatever you're reselling) is the source of truth. No Postgres, no
+voucher ledger. See \`docs/learnings.md\` in
+\`zero-netlify-integration\` for the reference pattern.`
+		: ""
+}
+
+## Calling the endpoint
+
+\`\`\`sh
+${exampleCurl}
+\`\`\`
 `;
 };
