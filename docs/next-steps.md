@@ -13,30 +13,34 @@ Living doc. Last updated: 2026-04-23. Update when work lands.
 ### Repos
 | Repo | Where | Status |
 |---|---|---|
-| `zero-paywrap` | [github.com/zeroclickai/zero-paywrap](https://github.com/zeroclickai/zero-paywrap) (private) | `main` = `7a0e4ef`. Build + lint + 143 tests green. |
-| `zero-redis-integration` | [github.com/zeroclickai/zero-redis-integration](https://github.com/zeroclickai/zero-redis-integration) (private) | `main` merged + **deployed to Render on `@zeroclickai/paywrap@0.0.1`**. 66/66 tests green. |
-| `zero-netlify-integration` | local only, not pushed | `main` at `76a01ea80`. 70/70 tests green locally. Still using `file:../` deps; needs the npm-scope swap before push. |
+| `zero-paywrap` | [github.com/zeroclickai/zero-paywrap](https://github.com/zeroclickai/zero-paywrap) (private) | `main` up-to-date. 143 tests green. |
+| `zero-redis-integration` | [github.com/zeroclickai/zero-redis-integration](https://github.com/zeroclickai/zero-redis-integration) (private) | `main` merged + **deployed to Render on `@zeroclickai/paywrap@0.0.1`**. 66/66 tests green. Session intent. |
+| `zero-integrations` (monorepo) | [github.com/zeroclickai/zero-integrations](https://github.com/zeroclickai/zero-integrations) (private) | `main` at `6384121`. Contains `services/netlify/`. 69/69 tests green. Redis removed — in-process fire-and-forget + stateless. **Ready for Render Starter deploy (`plan: starter` in render.yaml).** |
 | `zero` (main Zero repo) | [github.com/zeroclickai/zero](https://github.com/zeroclickai/zero) | Untouched during paywrap work. Buyer-side `PaymentService` still hand-rolled. |
+
+The standalone `zero-netlify-integration` repo is deprecated — its content lives in `zero-integrations/services/netlify/` with full git history via `git subtree add`. Don't push to the old repo.
 
 ### Production services
 - **Redis integration** (session intent): `https://zero-redis-integration.onrender.com` — live, healthz + paywrap.json verified against new kit
-- **Netlify integration** (charge intent): not deployed yet
+- **Netlify integration** (charge intent): code ready, not yet deployed — awaits Render Starter setup
 
 ---
 
 ## Immediate next steps (ranked by leverage)
 
-### 1. Push + deploy zero-netlify-integration
-- Swap `file:../zero-paywrap/...` deps in `package.json` → `"@zeroclickai/paywrap": "^0.0.1"` + `"@zeroclickai/paywrap-adapter-fastify": "^0.0.1"`
-- Sweep imports `@zerorun/paywrap*` → `@zeroclickai/paywrap*` (same sed sweep we did for redis)
-- `pnpm install` → regenerate lockfile
-- `pnpm test` → all 70 should still pass
-- Create GitHub repo under `zeroclickai`, push as PR branch (never push main directly — repo memory rule)
-- Set up Render (or Fly or Cloudflare Workers) deploy: needs `NETLIFY_API_TOKEN`, `MPP_SECRET_KEY`, `WALLET_PRIVATE_KEY`, `TEMPO_RPC_URL`, `REDIS_URL`
-- Fund the service wallet with ~$0.10 USDC on Tempo for charge fee-gas (the charge settlement tx is paid by the seller)
-- `paywrap register` to publish to Zero's catalog
+### 1. Deploy netlify to Render
+The monorepo is ready. Left to the human (needs Render dashboard + secrets + a funded wallet):
 
-Effort: ~1 hour to push + 30 min to wire Render env.
+1. **Generate service wallet**: `npx @zeroclickai/paywrap-cli generate-wallet` — save `WALLET_PRIVATE_KEY` + `WALLET_ADDRESS`
+2. **Generate MPP secret**: `openssl rand -hex 32` — save as `MPP_SECRET_KEY`
+3. **Get a Netlify PAT**: https://app.netlify.com/user/applications/personal — save as `NETLIFY_API_TOKEN`
+4. **New Blueprint on Render** pointing at [zeroclickai/zero-integrations](https://github.com/zeroclickai/zero-integrations). Render detects `render.yaml` at root.
+5. **Fill `netlify-mpp-common` env group** with the values above + `PUBLIC_BASE_URL` (the `*.onrender.com` URL Render assigns), `NETLIFY_TEAM_SLUG` (optional), `NETLIFY_ACCOUNT_SLUG` (optional)
+6. **Fund service wallet** with ~$0.10 USDC on Tempo (charge settlement is seller-paid)
+7. **Deploy** — Docker build runs `pnpm install` (from monorepo root) + starts tsx. Healthz returns `{"ok":true,"probes":{"netlify":"up"},"wallet":"0x..."}`
+8. **Register**: `PUBLIC_BASE_URL=... ZERO_API_URL=... WALLET_PRIVATE_KEY=... npx @zeroclickai/paywrap-cli register` to list the service in Zero's catalog
+
+Effort: ~30 min assuming the accounts already exist.
 
 ### 2. Refactor Zero CLI's `payment-service.ts` to use kit primitives
 Reassessed (2026-04-23): we originally scoped a separate `@zeroclickai/paywrap-client` buyer SDK with `createPayingFetch`. **That's deferred until concrete demand from a programmatic agent framework surfaces.** Today 95%+ of MPP buyers go through the Zero CLI, which works fine — there's no urgent programmatic-in-code use case.
