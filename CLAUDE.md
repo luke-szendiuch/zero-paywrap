@@ -33,6 +33,8 @@ Two consumer repos live as siblings: `../zero-redis-integration/` (session inten
 7. **No barrel files in the kit.** Consumers import from subpaths (`@zeroclickai/paywrap/mpp`, `/auth`, `/signing`, etc.). No root barrel export exists — deliberate.
 8. **Lift when duplicated.** If a pure utility lives in an adapter, move it to the kit and re-export from both adapters.
 
+9. **Primitives, not opinions about infra.** The kit doesn't impose a queue, DB, framework, or concurrency model on services. A charge-intent service might run fire-and-forget in-process; a high-throughput session service might use BullMQ. Both are valid. Don't bake "you need Redis" assumptions into the kit or the scaffold defaults beyond documenting the option.
+
 ## How to work here
 
 - **Before committing:** `pnpm -r --filter '!./examples/*' typecheck && pnpm -r test && pnpm -w lint` must be green.

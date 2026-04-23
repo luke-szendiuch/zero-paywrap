@@ -138,6 +138,8 @@ Not yet shipped:
 
 9. **Lift when duplicated.** If a pure utility lives in an adapter, move it to the kit and re-export. `extractCredential` is in `/auth` now because both adapters need it. Same rule going forward.
 
+10. **Primitives, not opinions about infrastructure.** The kit does not impose architectural choices — no required queue, no required database, no required framework, no required concurrency model. A service can run on Fastify + Postgres + BullMQ, or Hono + Workers KV + in-process fire-and-forget, or Express + DynamoDB + cron triggers. The kit's `createPaywrapMpp` + adapters + security primitives work the same across all of them. **Paywrap never says "you need Redis for durability" or "you need a DB for idempotency" — services pick what fits their operational trade-offs.** The CLI ships defaults for common setups (Fastify + optional Postgres + optional BullMQ) but every toggle is `none`-able.
+
 ---
 
 ## What's in scope / not in scope
