@@ -2,7 +2,11 @@
 
 Framework-agnostic primitives for building **paid API services** that speak payment protocols over HTTP. Today the kit covers **MPP** (session + charge intents on Tempo, USDC settlement); **x402** is the next protocol we're slotting in alongside without breaking consumers.
 
-The kit is intentionally narrow — everything here is runnable from any Node HTTP framework. For Fastify, layer [`@zeroclickai/paywrap-adapter-fastify`](../adapters/fastify/) on top. For a turnkey project scaffold (routes, env schema, Render config), use the [`paywrap`](../cli/) CLI.
+**Two ways in:**
+1. **Already have an API?** `pnpm add @zeroclickai/paywrap @zeroclickai/paywrap-adapter-fastify` — 10 lines of middleware to gate any route (see Path A below).
+2. **Starting fresh?** `npx @zeroclickai/paywrap-cli create my-service` — interactive scaffold with routes, env schema, Dockerfile, optional DB + worker (see Path B below). Nothing to install up-front.
+
+The kit is intentionally narrow — everything here is runnable from any Node HTTP framework. For Fastify, layer [`@zeroclickai/paywrap-adapter-fastify`](../adapters/fastify/) on top; for Hono / Workers / Bun, use [`@zeroclickai/paywrap-adapter-hono`](../adapters/hono/). The CLI is a separate package so runtime services don't carry scaffolder deps.
 
 ## Two quickstart paths
 

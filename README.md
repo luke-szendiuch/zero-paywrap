@@ -2,6 +2,13 @@
 
 Toolkit for building paid API services on-chain. v1 covers MPP (channel-based session/charge payments on Tempo). Designed so x402 support can slot in later without changing consumers.
 
+## Two ways in
+
+- **Already have an API?** Install the kit + an adapter and drop `mppGated` in front of any route (~10 lines). See [`packages/kit/README.md`](./packages/kit/README.md#path-a--drop-in-to-an-existing-fastify-api).
+- **Starting fresh?** `npx @zeroclickai/paywrap-cli create my-service` spins up an interactive scaffold — no install required. See [`packages/cli/README.md`](./packages/cli/README.md).
+
+The CLI is a separate package because it has scaffolder deps (`@clack/prompts`, `commander`, `execa`) that your runtime services shouldn't carry. If you like the `npx` pattern — zero install, one command — you never even touch it as a dependency.
+
 ## Packages
 
 | Package | Purpose |
