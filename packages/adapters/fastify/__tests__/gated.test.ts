@@ -1,9 +1,11 @@
+import type { VerifiedCredential } from "@zerorun/paywrap/auth";
 import { createPaywrapMpp, memoryStore } from "@zerorun/paywrap/mpp";
 import { TEMPO_CHAIN_ID, TEMPO_ESCROW } from "@zerorun/paywrap/mpp";
 import { buildVoucherCredential, channelIdFromLabel } from "@zerorun/paywrap/signing";
 import { seedChannel } from "@zerorun/paywrap/testing";
+import type { Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createFastifyApp } from "../src/index.js";
 
 // Anvil test account index 0 — known-answer seller key.
@@ -137,6 +139,219 @@ describe("app.mppGated — valid credentials", () => {
 		const body = JSON.parse(res.body);
 		expect(body.hasCred).toBe(true);
 		expect(body.payer.toLowerCase()).toBe(payer.address.toLowerCase());
+		await app.close();
+	});
+
+	it("preCheck returning {ok:false} short-circuits — handler never runs, no verify attempted", async () => {
+		const { app, mpp } = makeApp();
+		const verifySpy = vi.spyOn(mpp.mppx, "verifyCredential");
+		const payer = privateKeyToAccount(generatePrivateKey());
+		const channelId = channelIdFromLabel("gated-precheck-reject");
+		await seedChannel({
+			channelStore: mpp.channelStore,
+			channelId,
+			payer: payer.address,
+			payee: mpp.account.address,
+			escrowContract: TEMPO_ESCROW,
+			chainId: TEMPO_CHAIN_ID,
+			deposit: 10_000_000n,
+		});
+		const header = await buildVoucherCredential({
+			payer,
+			channelId,
+			cumulativeAmount: 50_000n,
+			escrowContract: TEMPO_ESCROW,
+			chainId: TEMPO_CHAIN_ID,
+			recipient: mpp.account.address,
+			realm: REALM,
+			secretKey: SECRET_KEY,
+			scope: "paid:1",
+		});
+		const handler = vi.fn(async () => ({ ok: true }));
+		app.post(
+			"/paid",
+			{
+				preHandler: app.mppGated({
+					scope: "paid:1",
+					amount: 50_000n,
+					preCheck: async ({ claimedPayer }) => ({
+						ok: false,
+						status: 409,
+						body: { error: "name_taken", claimed: claimedPayer },
+					}),
+				}),
+			},
+			handler,
+		);
+		const res = await app.inject({
+			method: "POST",
+			url: "/paid",
+			headers: { authorization: header },
+		});
+		expect(res.statusCode).toBe(409);
+		expect(JSON.parse(res.body)).toMatchObject({ error: "name_taken" });
+		expect(handler).not.toHaveBeenCalled();
+		expect(verifySpy).not.toHaveBeenCalled();
+		await app.close();
+	});
+
+	it("preCheck returning {ok:'already_done'} populates req.payer + runs handler without verify", async () => {
+		const { app, mpp } = makeApp();
+		const verifySpy = vi.spyOn(mpp.mppx, "verifyCredential");
+		const payer = privateKeyToAccount(generatePrivateKey());
+		const channelId = channelIdFromLabel("gated-precheck-already");
+		await seedChannel({
+			channelStore: mpp.channelStore,
+			channelId,
+			payer: payer.address,
+			payee: mpp.account.address,
+			escrowContract: TEMPO_ESCROW,
+			chainId: TEMPO_CHAIN_ID,
+			deposit: 10_000_000n,
+		});
+		const header = await buildVoucherCredential({
+			payer,
+			channelId,
+			cumulativeAmount: 50_000n,
+			escrowContract: TEMPO_ESCROW,
+			chainId: TEMPO_CHAIN_ID,
+			recipient: mpp.account.address,
+			realm: REALM,
+			secretKey: SECRET_KEY,
+			scope: "paid:1",
+		});
+		const syntheticPayer = payer.address.toLowerCase() as Hex;
+		app.post(
+			"/paid",
+			{
+				preHandler: app.mppGated({
+					scope: "paid:1",
+					amount: 50_000n,
+					preCheck: async ({ rawCredential }) => ({
+						ok: "already_done",
+						payer: syntheticPayer,
+						// In practice the caller constructs this from a prior
+						// verify record; the test only asserts it round-trips
+						// onto req.verifiedCredential without mppGated ever
+						// calling verify.
+						verifiedCredential: {
+							credential: rawCredential,
+						} as unknown as VerifiedCredential,
+					}),
+				}),
+			},
+			async (req) => ({ payer: req.payer, hasCred: !!req.verifiedCredential }),
+		);
+		const res = await app.inject({
+			method: "POST",
+			url: "/paid",
+			headers: { authorization: header },
+		});
+		expect(res.statusCode).toBe(200);
+		const body = JSON.parse(res.body);
+		expect(body.payer).toBe(syntheticPayer);
+		expect(body.hasCred).toBe(true);
+		expect(verifySpy).not.toHaveBeenCalled();
+		await app.close();
+	});
+
+	it("preCheck returning {ok:true} proceeds to normal verify path", async () => {
+		const { app, mpp } = makeApp();
+		const payer = privateKeyToAccount(generatePrivateKey());
+		const channelId = channelIdFromLabel("gated-precheck-ok");
+		await seedChannel({
+			channelStore: mpp.channelStore,
+			channelId,
+			payer: payer.address,
+			payee: mpp.account.address,
+			escrowContract: TEMPO_ESCROW,
+			chainId: TEMPO_CHAIN_ID,
+			deposit: 10_000_000n,
+		});
+		const header = await buildVoucherCredential({
+			payer,
+			channelId,
+			cumulativeAmount: 50_000n,
+			escrowContract: TEMPO_ESCROW,
+			chainId: TEMPO_CHAIN_ID,
+			recipient: mpp.account.address,
+			realm: REALM,
+			secretKey: SECRET_KEY,
+			scope: "paid:1",
+		});
+		const preCheck = vi.fn(async ({ claimedPayer }: { claimedPayer: Hex | null }) => {
+			// claimedPayer for a session voucher is looked up from the
+			// channel store — it should match the seeded payer.
+			expect(claimedPayer?.toLowerCase()).toBe(payer.address.toLowerCase());
+			return { ok: true as const };
+		});
+		app.post(
+			"/paid",
+			{
+				preHandler: app.mppGated({ scope: "paid:1", amount: 50_000n, preCheck }),
+			},
+			async (req) => ({ payer: req.payer, hasCred: !!req.verifiedCredential }),
+		);
+		const res = await app.inject({
+			method: "POST",
+			url: "/paid",
+			headers: { authorization: header },
+		});
+		expect(res.statusCode).toBe(200);
+		expect(preCheck).toHaveBeenCalledOnce();
+		const body = JSON.parse(res.body);
+		expect(body.hasCred).toBe(true);
+		expect(body.payer.toLowerCase()).toBe(payer.address.toLowerCase());
+		await app.close();
+	});
+
+	it("preCheck throws → 500, handler not invoked", async () => {
+		const { app, mpp } = makeApp();
+		const verifySpy = vi.spyOn(mpp.mppx, "verifyCredential");
+		const payer = privateKeyToAccount(generatePrivateKey());
+		const channelId = channelIdFromLabel("gated-precheck-throw");
+		await seedChannel({
+			channelStore: mpp.channelStore,
+			channelId,
+			payer: payer.address,
+			payee: mpp.account.address,
+			escrowContract: TEMPO_ESCROW,
+			chainId: TEMPO_CHAIN_ID,
+			deposit: 10_000_000n,
+		});
+		const header = await buildVoucherCredential({
+			payer,
+			channelId,
+			cumulativeAmount: 50_000n,
+			escrowContract: TEMPO_ESCROW,
+			chainId: TEMPO_CHAIN_ID,
+			recipient: mpp.account.address,
+			realm: REALM,
+			secretKey: SECRET_KEY,
+			scope: "paid:1",
+		});
+		const handler = vi.fn(async () => ({ ok: true }));
+		app.post(
+			"/paid",
+			{
+				preHandler: app.mppGated({
+					scope: "paid:1",
+					amount: 50_000n,
+					preCheck: async () => {
+						throw new Error("boom");
+					},
+				}),
+			},
+			handler,
+		);
+		const res = await app.inject({
+			method: "POST",
+			url: "/paid",
+			headers: { authorization: header },
+		});
+		expect(res.statusCode).toBe(500);
+		expect(handler).not.toHaveBeenCalled();
+		expect(verifySpy).not.toHaveBeenCalled();
 		await app.close();
 	});
 

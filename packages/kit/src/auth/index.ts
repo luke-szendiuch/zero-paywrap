@@ -26,6 +26,52 @@ export type VerifiedCredential = {
 const PROOF_SOURCE_RE = /^did:pkh:eip155:\d+:(0x[0-9a-fA-F]{40})$/;
 
 /**
+ * Read the CLAIMED payer address from a RAW (not-yet-verified) mppx credential.
+ *
+ * Unlike `payerFromCredential`, this does NOT require the credential to
+ * have been verified — it's a best-effort hint suitable for pre-verify
+ * lookups (e.g. to key an idempotency read on the wallet the client
+ * claims before we pay to verify the claim).
+ *
+ * Two shapes:
+ *
+ *   1. `tempo.session` voucher — `payload.channelId` is present. Look up
+ *      the channel in the store; if it exists, its recorded `payer` was
+ *      validated by mppx at open-time. If the channel doesn't exist
+ *      (mppx hasn't seen it yet), return `null` — we have no hint.
+ *
+ *   2. `tempo.charge` / proof — no `channelId`. Parse `credential.source`
+ *      as a `did:pkh`; this is the address the buyer is CLAIMING to hold.
+ *      The claim is not yet proven (that's what verify does), but for a
+ *      pre-check lookup it's enough.
+ *
+ * SECURITY: the returned address is NOT authoritative. Use it only to
+ * structure pre-verify work (e.g. database reads keyed on wallet) that
+ * the subsequent `verifyWithScope` call will validate. Never make a
+ * commitment (settle, charge, grant) based on this value alone.
+ */
+export const claimedPayerFromRawCredential = async (
+	channelStore: PaywrapMpp["channelStore"],
+	credential: RawCredential,
+): Promise<Hex | null> => {
+	const payload = credential.payload as { channelId?: Hex; type?: string };
+	if (payload?.channelId) {
+		try {
+			const state = await channelStore.getChannel(payload.channelId);
+			if (!state) return null;
+			return state.payer.toLowerCase() as Hex;
+		} catch {
+			return null;
+		}
+	}
+	const source = credential.source;
+	if (typeof source !== "string") return null;
+	const match = PROOF_SOURCE_RE.exec(source);
+	if (!match || !match[1]) return null;
+	return match[1].toLowerCase() as Hex;
+};
+
+/**
  * Read the payer address from a verified mppx credential. Two shapes:
  *
  *   1. `tempo.session` voucher — `payload.channelId` identifies the open

@@ -2,11 +2,13 @@ import { Session } from "mppx/tempo";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import type { VerifiedCredential } from "../src/auth/index.js";
+import type { RawCredential } from "../src/auth/index.js";
 import {
 	VERIFIED,
 	buildChargeChallenge,
 	buildProofChallenge,
 	buildSessionChallenge,
+	claimedPayerFromRawCredential,
 	payerFromCredential,
 } from "../src/auth/index.js";
 import { TEMPO_CHAIN_ID, TEMPO_ESCROW } from "../src/mpp/constants.js";
@@ -101,6 +103,49 @@ describe("auth.payerFromCredential", () => {
 		const store = memoryStore();
 		const channelStore = Session.ChannelStore.fromStore(store);
 		const addr = await payerFromCredential(channelStore, fakeCredential({}));
+		expect(addr).toBeNull();
+	});
+});
+
+describe("auth.claimedPayerFromRawCredential", () => {
+	// The helper accepts a raw (unverified) credential — same shape as the
+	// inner `.credential` of a VerifiedCredential. Reuse fakeCredential but
+	// pull the inner credential out.
+	const rawFrom = (payload: Record<string, unknown>, source?: string): RawCredential =>
+		fakeCredential(payload, source).credential;
+
+	it("returns the seeded payer for a voucher (channelId present + in store)", async () => {
+		const store = memoryStore();
+		const channelStore = Session.ChannelStore.fromStore(store);
+		const payer = privateKeyToAccount(generatePrivateKey());
+		const payee = privateKeyToAccount(generatePrivateKey());
+		const channelId = channelIdFromLabel("claimed-voucher");
+		await seedChannel({
+			channelStore,
+			channelId,
+			payer: payer.address,
+			payee: payee.address,
+			escrowContract: TEMPO_ESCROW,
+			chainId: TEMPO_CHAIN_ID,
+			deposit: 1n,
+		});
+		const addr = await claimedPayerFromRawCredential(channelStore, rawFrom({ channelId }));
+		expect(addr).toBe(payer.address.toLowerCase());
+	});
+
+	it("extracts the claimed address from a did:pkh source before verify", async () => {
+		const channelStore = Session.ChannelStore.fromStore(memoryStore());
+		const address = "0xabcdef0123456789ABCDEF0123456789abcdef01";
+		const addr = await claimedPayerFromRawCredential(
+			channelStore,
+			rawFrom({ type: "proof" }, `did:pkh:eip155:4217:${address}`),
+		);
+		expect(addr).toBe(address.toLowerCase());
+	});
+
+	it("returns null when channelId is absent and source is malformed", async () => {
+		const channelStore = Session.ChannelStore.fromStore(memoryStore());
+		const addr = await claimedPayerFromRawCredential(channelStore, rawFrom({}, "not-a-did"));
 		expect(addr).toBeNull();
 	});
 });

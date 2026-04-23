@@ -1,6 +1,7 @@
 import {
 	type RawCredential,
 	type VerifiedCredential,
+	claimedPayerFromRawCredential,
 	payerFromCredential,
 } from "@zerorun/paywrap/auth";
 import { type PaywrapMpp, verifyWithScope } from "@zerorun/paywrap/mpp";
@@ -50,6 +51,46 @@ const USDC_DECIMALS = 6;
  */
 export type MppIntent = "session" | "charge" | "proof";
 
+/**
+ * Result of a `preCheck` callback.
+ *
+ *   - `{ok: true}` — proceed to `verifyWithScope` as normal.
+ *   - `{ok: false, status, body}` — short-circuit with this response.
+ *     No verify, no charge, no handler invocation. Use this to detect
+ *     preconditions that would make the paid work impossible (e.g.
+ *     name-collision on a "create" endpoint).
+ *   - `{ok: "already_done", payer, verifiedCredential}` — the preCheck
+ *     determined this is an idempotent retry of an operation that was
+ *     already paid for. Skip verify (mppx would reject as
+ *     already-settled), populate `req.payer` + `req.verifiedCredential`
+ *     from the returned values, and invoke the route handler. Only use
+ *     this branch when you can safely synthesize a `VerifiedCredential`
+ *     for the operation; otherwise return `{ok: false, status: 202, ...}`.
+ */
+export type MppGatedPreCheckResult =
+	| { ok: true }
+	| { ok: false; status: number; body: unknown }
+	| { ok: "already_done"; payer: Hex; verifiedCredential: VerifiedCredential };
+
+/**
+ * Callback invoked AFTER credential parse + `claimedPayer` extraction,
+ * BEFORE `verifyWithScope`. See `MppGatedPreCheckResult` for the three
+ * outcomes.
+ *
+ * `claimedPayer` is NOT security-authoritative — it's a hint pulled from
+ * the raw credential (channel store lookup for session vouchers, did:pkh
+ * parse for charge/proof credentials). Use it to structure pre-verify
+ * work (e.g. DB reads keyed on wallet) that the subsequent verify call
+ * will validate. Never commit (settle, charge, grant) based on this
+ * value alone.
+ */
+export type MppGatedPreCheck = (context: {
+	rawCredential: RawCredential;
+	claimedPayer: Hex | null;
+	request: FastifyRequest;
+	reply: FastifyReply;
+}) => Promise<MppGatedPreCheckResult>;
+
 export type MppGatedOptions = {
 	/** MANDATORY. HMAC-bound into the challenge id so credentials don't replay cross-route. */
 	scope: string;
@@ -65,6 +106,13 @@ export type MppGatedOptions = {
 	suggestedDeposit?: bigint;
 	/** Session-only. Defaults to "request" at the mppx layer. */
 	unitType?: string;
+	/**
+	 * Optional pre-verify hook. Runs after credential parse, before
+	 * `verifyWithScope`. Critical for paid routes whose preconditions
+	 * must be checked BEFORE a charge settles — e.g. name-collision on
+	 * a "create" endpoint where a 409 must not cost the buyer.
+	 */
+	preCheck?: MppGatedPreCheck;
 };
 
 // Fastify's preHandler callback can return `void | Promise<void>` or a
@@ -167,6 +215,56 @@ export const registerMppGated = (app: FastifyInstance) => {
 			if (!credential) {
 				await sendChallengeForIntent(gatedApp, reply, intent, opts, opts.detail ?? defaultDetail);
 				return;
+			}
+
+			// Run the caller's preCheck (if any) BEFORE verify so
+			// preconditions that would reject the request don't cost the
+			// buyer a settled charge. `claimedPayer` is a best-effort hint
+			// — NOT authoritative — suitable for pre-verify DB lookups.
+			if (opts.preCheck) {
+				let claimedPayer: Hex | null = null;
+				try {
+					claimedPayer = await claimedPayerFromRawCredential(
+						gatedApp.ctx.mppxChannelStore,
+						credential,
+					);
+				} catch {
+					// Claimed-payer extraction is best-effort; fall through
+					// with null and let preCheck decide.
+					claimedPayer = null;
+				}
+
+				let result: MppGatedPreCheckResult;
+				try {
+					result = await opts.preCheck({
+						rawCredential: credential,
+						claimedPayer,
+						request: req,
+						reply,
+					});
+				} catch (err) {
+					req.log.error(
+						{ err: err instanceof Error ? err.message : String(err) },
+						"paywrap/mppGated: preCheck threw — responding 500",
+					);
+					await reply.status(500).send({ error: "precheck_failed" });
+					return;
+				}
+
+				if (result.ok === false) {
+					await reply.status(result.status).send(result.body);
+					return;
+				}
+				if (result.ok === "already_done") {
+					// Caller determined this is an idempotent retry. Skip
+					// verify (mppx would reject already-settled) and hand
+					// the handler the payer + verifiedCredential the
+					// preCheck vouches for.
+					req.payer = result.payer;
+					req.verifiedCredential = result.verifiedCredential;
+					return;
+				}
+				// result.ok === true — fall through to verify.
 			}
 
 			let verified: VerifiedCredential;
