@@ -1,4 +1,4 @@
-import { Mppx, Store, tempo } from "mppx/server";
+import { Mppx, tempo } from "mppx/server";
 import { Session } from "mppx/tempo";
 import { http, createWalletClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
@@ -91,5 +91,3 @@ export const createPaywrapMpp = (config: CreateMppxConfig): PaywrapMpp => {
 
 	return { mppx, channelStore, account, client };
 };
-
-export { Store };
