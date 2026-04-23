@@ -1,0 +1,27 @@
+{
+	"name": "@zerorun/paywrap-cli",
+	"version": "0.0.1",
+	"type": "module",
+	"description": "Interactive scaffolder + day-2 ops CLI for @zerorun/paywrap services.",
+	"bin": { "paywrap": "./dist/cli.js" },
+	"files": ["dist", "README.md"],
+	"scripts": {
+		"build": "tsc",
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run",
+		"dev": "tsx src/cli.ts"
+	},
+	"dependencies": {
+		"@clack/prompts": "^0.8.0",
+		"@zerorun/paywrap": "workspace:*",
+		"commander": "^12.1.0",
+		"dotenv": "^16.4.0",
+		"execa": "^9.5.0"
+	},
+	"devDependencies": {
+		"@types/node": "^22.10.2",
+		"tsx": "^4.19.2",
+		"typescript": "^5.7.2",
+		"vitest": "^2.1.8"
+	}
+}

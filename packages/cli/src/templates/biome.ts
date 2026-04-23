@@ -1,0 +1,18 @@
+import { stringifyTabs } from "../lib/json-tabs.js";
+
+export const biomeTemplate = (): string =>
+	`${stringifyTabs({
+		$schema: "https://biomejs.dev/schemas/1.9.4/schema.json",
+		vcs: { enabled: true, clientKind: "git", useIgnoreFile: true },
+		files: { ignoreUnknown: false, ignore: ["**/dist/**", "**/node_modules/**", "**/*.md"] },
+		formatter: { enabled: true, indentStyle: "tab", lineWidth: 100 },
+		organizeImports: { enabled: true },
+		linter: {
+			enabled: true,
+			rules: {
+				recommended: true,
+				style: { noNonNullAssertion: "off", useImportType: "error" },
+			},
+		},
+		javascript: { formatter: { quoteStyle: "double", semicolons: "always" } },
+	})}\n`;

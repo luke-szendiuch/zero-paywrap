@@ -1,0 +1,8 @@
+export const gitignoreTemplate = (): string => `node_modules
+dist
+*.tsbuildinfo
+.env
+.env.local
+coverage
+.DS_Store
+`;
