@@ -58,7 +58,12 @@ await app.listen({ port: 3000 });
 
 > **No Redis required for dev.** paywrap uses an in-memory channel store when `REDIS_URL` is unset. Add Redis before scaling to multiple replicas — see [`@zeroclickai/paywrap/mpp`'s `redisStore`](../../packages/kit/src/mpp/stores.ts). On Cloudflare Workers, use [`workersKvStore`](./src/mpp/stores/workers-kv.ts) (charge-safe; non-atomic for high-concurrency session — read the docblock).
 
-> **Wallet bootstrap.** For `session` or `charge` intent, fund the service wallet with ~$0.05 USDC on Tempo so it can submit `tempo.charge` settlement txs. The [`paywrap`](../cli/) CLI provides `paywrap generate-wallet` + `paywrap prefund`. For `proof` intent (zero-amount wallet-auth), no funding is needed.
+> **Wallet bootstrap.** Who pays gas depends on the intent:
+> - **`charge` intent** — buyer pays gas. The buyer signs a Tempo tx with `feeToken: USDC`, the seller broadcasts it as-is. Seller wallet needs NO funding; it's just a signer (for HMAC-bound challenges) + settlement recipient.
+> - **`session` intent** — seller pays gas. The seller submits `openChannel`/`closeChannel` txs and needs USDC to cover those. Use `paywrap prefund` to seed ~$0.05.
+> - **`proof` intent** — zero-amount wallet-auth; no on-chain activity, no funding.
+>
+> Opting into `feePayer: true` on charge sponsors the buyer's gas — then the seller pays. mppx's default is no fee-payer. The [`paywrap`](../cli/) CLI provides `paywrap generate-wallet` + `paywrap prefund`.
 
 First-pass curl against a paid route:
 
@@ -101,7 +106,7 @@ The CLI walks through:
 - **price + scope** — micro-USDC price per call; HMAC-bound scope string.
 - **framework + storage + queue + hosting** — fastify, postgres/sqlite/redis, bullmq/none, render/fly/self-host.
 - **wallet** — generates a fresh private key inline, prints the address + private key once.
-- **prefund** — for session/charge, optionally top up the wallet with ~$0.05 USDC on Tempo in the same flow.
+- **prefund** — session intent only; tops up the seller wallet with ~$0.05 USDC on Tempo so `openChannel`/`closeChannel` can pay gas. Charge and proof services skip this (buyer-paid gas / zero on-chain).
 
 Post-scaffold you have a working 402 paid endpoint in under 3 minutes. Business logic lives behind `TODO(paywrap)` markers — everything surrounding it (challenge minting, verification, payer resolution, manifest, healthz) is already wired.
 

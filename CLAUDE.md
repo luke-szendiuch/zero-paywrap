@@ -51,7 +51,7 @@ Two consumer repos live as siblings: `../zero-redis-integration/` (session inten
 - `node:util` from mppx requires `nodejs_compat = true` in `wrangler.toml` for Workers consumers.
 - Workers KV is NOT linearizable; the store adapter documents this loudly. Safe for charge-intent, unsafe for high-concurrency session.
 - `tempo.charge.verify()` settles on-chain atomically during verify — reversed-order route logic risks paying without delivering.
-- **Charge-intent is seller-paid gas.** The seller submits the settlement tx, so the seller wallet must hold a small USDC balance (~$0.10 seeds hundreds of verifies on Tempo; `feeToken: USDC` denominates gas in USDC). This is counter-intuitive for charge-intent since "the buyer pays," but the buyer pays the *price*, not the *gas*. After the first sale the wallet is net positive. To get zero-seed, route through a facilitator (mppx doesn't wire one by default for charge).
+- **Charge-intent = zero seller funding; session-intent = seller funding required.** Charge broadcasts the buyer's signed Tempo tx as-is (buyer's USDC pays gas via `feeToken: USDC`). The seller wallet is just a signer for challenge HMAC + a recipient — it does not need to hold USDC. Session intent is the opposite: the seller submits `openChannel`/`closeChannel` txs themselves and needs USDC to pay gas for those. If you opt into `feePayer: true` on charge (sponsor gas for the buyer), *then* the seller pays — default in mppx is no fee-payer.
 
 ## Publishing
 

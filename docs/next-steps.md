@@ -36,29 +36,14 @@ The monorepo is ready. Left to the human (needs Render dashboard + secrets + a f
 3. **Get a Netlify PAT**: https://app.netlify.com/user/applications/personal — save as `NETLIFY_API_TOKEN`
 4. **New Blueprint on Render** pointing at [zeroclickai/zero-integrations](https://github.com/zeroclickai/zero-integrations). Render detects `render.yaml` at root.
 5. **Fill `netlify-mpp-common` env group** with the values above + `PUBLIC_BASE_URL` (the `*.onrender.com` URL Render assigns), `NETLIFY_TEAM_SLUG` (optional), `NETLIFY_ACCOUNT_SLUG` (optional)
-6. **Fund service wallet** with ~$0.10 USDC on Tempo (charge settlement is seller-paid)
+6. **No seller funding needed.** Charge-intent broadcasts the buyer's signed tx; the buyer's USDC pays both price and `feeToken: USDC` gas. Confirmed by reading mppx 0.6.3 source — `createPaywrapMpp` doesn't pass `feePayer`, so `isFeePayerTx=false` and the tx flows through unchanged. (Session-intent services do need USDC for `openChannel`/`closeChannel` gas.)
 7. **Deploy** — Docker build runs `pnpm install` (from monorepo root) + starts tsx. Healthz returns `{"ok":true,"probes":{"netlify":"up"},"wallet":"0x..."}`
 8. **Register**: `PUBLIC_BASE_URL=... ZERO_API_URL=... WALLET_PRIVATE_KEY=... npx @zeroclickai/paywrap-cli register` to list the service in Zero's catalog
 
 Effort: ~30 min assuming the accounts already exist.
 
-### 2. Refactor Zero CLI's `payment-service.ts` to use kit primitives
-Reassessed (2026-04-23): we originally scoped a separate `@zeroclickai/paywrap-client` buyer SDK with `createPayingFetch`. **That's deferred until concrete demand from a programmatic agent framework surfaces.** Today 95%+ of MPP buyers go through the Zero CLI, which works fine — there's no urgent programmatic-in-code use case.
-
-The valuable, immediate work is **dogfooding the kit's primitives inside the Zero CLI itself.** `zero/packages/cli/src/services/payment-service.ts` currently hand-rolls ~150 LOC of MPP plumbing (voucher signing, challenge parsing, credential extraction, balance checks). Most of that overlaps with what the kit already exports:
-
-- `buildChargeCredential` / `buildVoucherCredential` (signing)
-- `extractCredential` (auth)
-- `Challenge.deserialize` (re-exportable from kit/auth if needed)
-- tempo constants (`TEMPO_USDC`, `TEMPO_ESCROW`, `TEMPO_CHAIN_ID`, `tempoChain` with `feeToken`)
-
-Refactoring `payment-service.ts` onto kit primitives would:
-- Shrink it from ~150 → ~40 LOC
-- Remove duplication between Zero CLI and kit (both sides drift over time otherwise)
-- Prove the kit is sufficient for real-world buying — the acceptance test that validates we don't *need* a separate SDK yet
-- Surface any missing primitives as kit PRs rather than parallel implementations
-
-Effort: ~3-4 hours. Low risk because the Zero CLI already has integration tests for its paid-fetch path.
+### 2. Zero CLI stays separate — NOT refactoring onto kit (decided 2026-04-23)
+User confirmed: Zero CLI's `payment-service.ts` stays as-is. The buyer side and the seller kit are kept intentionally separate. No refactor, no shared primitives pulled into CLI. If the CLI and kit drift, that's acceptable — they serve different consumers (end-user CLI vs. service authors) and bundling them would couple releases.
 
 ### 2b. Document the programmatic-buying pattern (30 min)
 Add a section to `packages/kit/README.md` titled "Buying paywrap services programmatically" with two snippets:
@@ -113,7 +98,7 @@ When the x402 spec stabilizes + we have concrete use case, land primitives in `p
 ### `@zeroclickai/paywrap-client` — deferred, demand-driven
 Originally scoped as priority #2. Demoted after honest review: the Zero CLI handles 95%+ of MPP buying today. A separate SDK package targets **programmatic agents writing code** (LangChain tools, Cloudflare AI agents, OpenAI Agents SDK integrations) who need `createPayingFetch` inside their tool-use loop rather than shelling out to `zero fetch`. That's a theoretical use case at our current scale.
 
-**Ship it when:** someone building an agent framework plugin specifically asks, OR when Zero CLI's `payment-service.ts` refactor (step 2 above) surfaces a clean 40-LOC primitive that's obviously also useful to non-CLI buyers. Until then, the kit primitives + documented pattern are sufficient.
+**Ship it when:** someone building an agent framework plugin specifically asks. Zero CLI stays separate (per 2026-04-23 decision), so no buyer-side primitives will surface from a CLI refactor. Until external demand appears, the kit primitives + documented pattern are sufficient.
 
 **What it would contain** (reference, in case we build it later):
 - `createPayingFetch({ account, maxPay, chainBridge? })` — wraps `fetch`, handles 402 detection + retry
