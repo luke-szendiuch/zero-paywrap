@@ -6,9 +6,8 @@ import { privateKeyToAccount } from "viem/accounts";
 import { randomJoke } from "./jokes.js";
 
 /**
- * Worker environment bindings. `PAYWRAP_KV` is the namespace declared in
- * `wrangler.toml`. `WALLET_PRIVATE_KEY` + `MPP_SECRET_KEY` are secrets set
- * via `wrangler secret put`.
+ * Worker environment bindings. `PAYWRAP_KV` is declared in `wrangler.toml`;
+ * the secrets are set via `wrangler secret put`.
  */
 export type Env = {
 	PAYWRAP_KV: MinimalKVNamespace;
@@ -18,9 +17,8 @@ export type Env = {
 	TEMPO_RPC_URL: string;
 };
 
-/** Scope + price for the paid route. Surfaced in `.well-known/paywrap.json`. */
 const JOKE_SCOPE = "joke:1" as const;
-/** 0.02 USDC in micro-units (USDC has 6 decimals). */
+/** 0.02 USDC in micro-units (USDC = 6 decimals). */
 const JOKE_PRICE_MICRO = 20_000n;
 
 /**
@@ -38,18 +36,13 @@ export const mppFromEnv = (env: Env): ReturnType<typeof createPaywrapMpp> =>
 	});
 
 export type BuildAppOptions = {
-	/**
-	 * Testing-only override: pre-built mpp to use instead of letting the
-	 * factory construct one per request. Tests use this to install a
-	 * `stubVerifyCredential` hook on a concrete instance.
-	 */
+	/** Testing-only: pre-built mpp so tests can install hooks (e.g. `stubVerifyCredential`). */
 	mpp?: ReturnType<typeof createPaywrapMpp>;
 };
 
 export const buildApp = (options: BuildAppOptions = {}) => {
 	// Factory ctx: Worker env bindings are only available per-request (via
 	// `c.env`), so the mpp instance is built per request in production.
-	// Tests can inject a pre-built `options.mpp` to install hooks.
 	const app = createHonoApp<{
 		mppx: ReturnType<typeof createPaywrapMpp>["mppx"];
 		mppxChannelStore: ReturnType<typeof createPaywrapMpp>["channelStore"];
@@ -61,9 +54,6 @@ export const buildApp = (options: BuildAppOptions = {}) => {
 	app.get("/healthz", (c) => c.json({ status: "ok" }));
 
 	app.get("/.well-known/paywrap.json", (c) => {
-		// Seller payout wallet is derived from the private key. We keep this
-		// derivation out of the factory ctx because the manifest handler is
-		// the only consumer.
 		const env = c.env as Env;
 		const wallet = privateKeyToAccount(env.WALLET_PRIVATE_KEY as `0x${string}`).address as Address;
 		const manifest = buildPaywrapJson({

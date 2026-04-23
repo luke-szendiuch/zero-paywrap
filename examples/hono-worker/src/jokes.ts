@@ -1,4 +1,3 @@
-/** Tiny deterministic joke pool — pure data, no network. */
 const JOKES = [
 	"Why did the smart contract cross the road? To settle on the other side.",
 	"I told my wallet a joke about gas fees. It didn't find it funny; it was drained.",
