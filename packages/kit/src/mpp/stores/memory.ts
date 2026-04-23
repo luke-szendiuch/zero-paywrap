@@ -1,7 +1,4 @@
 import { Store } from "mppx/server";
 
-/**
- * Build an in-memory mppx channel store. Useful for tests and local dev
- * without Redis. Not durable across restarts.
- */
+/** In-memory mppx channel store. Tests + local dev. Not durable. */
 export const memoryStore = () => Store.memory();

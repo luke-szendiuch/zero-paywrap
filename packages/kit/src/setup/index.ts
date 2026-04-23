@@ -4,17 +4,14 @@ import { privateKeyToAccount } from "viem/accounts";
 import { tempoChain } from "../mpp/chain.js";
 import { TEMPO_USDC } from "../mpp/constants.js";
 
-/**
- * Setup utilities — programmatic counterparts to the `paywrap` CLI commands.
- * All of these are safe to call from a Node script or a one-off setup page.
- */
+// Programmatic counterparts to the `paywrap` CLI commands. Safe from a Node
+// script or one-off setup page.
 
 export type WalletKeypair = {
 	privateKey: `0x${string}`;
 	address: `0x${string}`;
 };
 
-/** Generate a random service wallet keypair. */
 export const generateWallet = (): WalletKeypair => {
 	const privateKey = `0x${randomBytes(32).toString("hex")}` as `0x${string}`;
 	const address = privateKeyToAccount(privateKey).address;
@@ -22,34 +19,25 @@ export const generateWallet = (): WalletKeypair => {
 };
 
 /**
- * Generate a random 32-byte HMAC secret for mppx (`MPP_SECRET_KEY`).
- *
- * This is the per-deployment key that binds challenge ids to this server.
- * Changing it invalidates all in-flight MPP sessions — rotate only during a
- * maintenance window.
+ * 32-byte HMAC secret for mppx (`MPP_SECRET_KEY`). Per-deployment key that
+ * binds challenge ids to this server. Rotating it invalidates all in-flight
+ * MPP sessions — do it during a maintenance window.
  */
 export const generateMppSecretKey = (): string => randomBytes(32).toString("hex");
 
 export type PrefundWalletParams = {
-	/** Source wallet private key (must hold USDC on Tempo). */
 	fromPrivateKey: `0x${string}`;
-	/** Destination address — typically the new service wallet. */
 	to: `0x${string}`;
-	/** Amount in raw USDC micro-units (6 decimals). Default: 50_000 = 0.05 USDC. */
+	/** Raw USDC micro-units (6 decimals). Default 50_000 = 0.05 USDC. */
 	amountUsdcMicro?: bigint;
-	/** Tempo RPC URL. */
 	tempoRpcUrl: string;
 };
 
 /**
- * Send USDC on Tempo to bootstrap a new service wallet.
- *
- * Only needed for MPP **session** services — the seller pays close gas per
- * channel (~0.002 USDC), so a fresh wallet needs a small float.
- * Charge-based services never need prefunding (buyer pays all gas).
- *
- * Uses `feeToken: USDC` via `tempoChain` so no native token is required on
- * the source wallet either.
+ * Send USDC on Tempo to bootstrap a new service wallet. Only needed for MPP
+ * **session** services — seller pays close gas per channel (~0.002 USDC).
+ * Charge-based services never need prefunding (buyer pays all gas). Uses
+ * `feeToken: USDC` via `tempoChain` so source wallet needs no native either.
  */
 export const prefundWallet = async (params: PrefundWalletParams): Promise<`0x${string}`> => {
 	const account = privateKeyToAccount(params.fromPrivateKey);
@@ -70,7 +58,6 @@ export const prefundWallet = async (params: PrefundWalletParams): Promise<`0x${s
 export type RegisterWithZeroParams = {
 	zeroApiUrl: string;
 	publicBaseUrl: string;
-	/** Protocol tag. Default: `"mpp"`. */
 	protocol?: "mpp" | "x402";
 };
 

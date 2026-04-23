@@ -11,17 +11,15 @@ export type SeedChannelParams = {
 	escrowContract: Address;
 	chainId: number;
 	deposit: bigint;
-	/** Token address in escrow; defaults to USDC on Tempo. */
 	token?: Address;
 };
 
 /**
- * Seed a ChannelStore with a fake-already-open channel. Tests only —
- * production opens channels via an on-chain `open` tx.
+ * Seed a ChannelStore with a fake-already-open channel. Tests only.
  *
- * mppx's voucher handler treats the cached state as authoritative for
- * `channelStateTtl` ms. Pair this with `createPaywrapMpp({ ..., channelStateTtl:
- * Number.POSITIVE_INFINITY })` so tests never reach for the RPC.
+ * mppx's voucher handler treats cached state as authoritative for
+ * `channelStateTtl` ms. Pair with `createPaywrapMpp({ ..., channelStateTtl:
+ * Number.POSITIVE_INFINITY })` so tests never hit the RPC.
  */
 export const seedChannel = async (params: SeedChannelParams): Promise<void> => {
 	await params.channelStore.updateChannel(params.channelId, () => ({
@@ -44,53 +42,20 @@ export const seedChannel = async (params: SeedChannelParams): Promise<void> => {
 	}));
 };
 
-/**
- * Restore handle returned by `stubVerifyCredential`. Always call `restore()`
- * in an `afterEach`/`finally` — leaving the stub installed across tests
- * leaks between test files running in the same process.
- */
 export type StubVerifyHandle = {
-	/** Restore the original `verifyCredential` implementation. */
 	restore: () => void;
 };
 
 /**
- * Replace `mppx.verifyCredential` with a loose stub that:
- *   - validates the credential parses (and therefore carries a signed
- *     challenge whose HMAC id mppx bound at mint-time),
- *   - enforces the `scope` option when passed (same foot-gun guard as
- *     the real verify), and
- *   - SKIPS on-chain settlement (the only step that needs a real Tempo RPC).
+ * Replace `mppx.verifyCredential` with a stub that parses the credential +
+ * enforces `scope` but SKIPS on-chain settlement. !!! TESTING ONLY — turns a
+ * paid charge into free. Exported under `@zerorun/paywrap/testing` to make
+ * the boundary obvious; the Workers export map excludes this subpath.
  *
- * Return value imitates mppx's real verify return shape closely enough for
- * `verifyWithScope` to treat the credential as authenticated.
+ * Always call `restore()` in an `afterEach`/`finally` — a leftover stub
+ * leaks into other tests in the same process.
  *
- * !!! TESTING ONLY !!!
- *
- * Do NOT ship this anywhere near a production server — it turns a paid
- * charge into free. It's exported from `@zerorun/paywrap/testing` so it's
- * obvious when you're crossing the line, and the Workers export map
- * excludes this subpath on purpose.
- *
- * Pair with `buildChargeCredential` from `@zerorun/paywrap/signing` for the
- * 402 → sign → 200 integration-test loop:
- *
- * ```ts
- * import { buildChargeCredential } from '@zerorun/paywrap/signing';
- * import { stubVerifyCredential } from '@zerorun/paywrap/testing';
- *
- * const { restore } = stubVerifyCredential(mpp.mppx);
- * try {
- *   const authz = await buildChargeCredential({ payer, amountMicro: 20_000n, ... });
- *   const res = await app.request('/v1/joke', {
- *     method: 'POST',
- *     headers: { authorization: authz },
- *   });
- *   expect(res.status).toBe(200);
- * } finally {
- *   restore();
- * }
- * ```
+ * Pair with `buildChargeCredential` for a 402 → sign → 200 integration loop.
  */
 export const stubVerifyCredential = (mppx: MppxInstance): StubVerifyHandle => {
 	// biome-ignore lint/suspicious/noExplicitAny: mppx.verifyCredential has a many-argument overload; the narrow `unknown[]` type from biome breaks the replacement's shape.
@@ -102,9 +67,6 @@ export const stubVerifyCredential = (mppx: MppxInstance): StubVerifyHandle => {
 		);
 	}
 	target.verifyCredential = async (credential: unknown, options?: { scope?: string }) => {
-		// The real verify parses the credential — callers already pass a
-		// parsed Credential (via `extractCredential`), but we still want a
-		// smoke test that the payload is present.
 		if (!credential || typeof credential !== "object") {
 			throw new Error("stubVerifyCredential: missing credential");
 		}

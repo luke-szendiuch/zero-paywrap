@@ -4,11 +4,9 @@ type Change<value, result> = Store.Change<value, result>;
 
 /**
  * Minimal Cloudflare Workers KV surface we depend on. Intentionally NOT
- * `@cloudflare/workers-types` — we only need three methods, and we don't
- * want consumers pulling Workers types transitively through paywrap.
- *
- * The real `KVNamespace` is structurally assignable to this interface, so
- * `workersKvStore(env.PAYWRAP_KV)` just works in a Worker.
+ * `@cloudflare/workers-types` — we only need three methods, and don't want
+ * consumers pulling Workers types transitively through paywrap. The real
+ * `KVNamespace` is structurally assignable.
  */
 export interface MinimalKVNamespace {
 	get(key: string): Promise<string | null>;
@@ -17,43 +15,21 @@ export interface MinimalKVNamespace {
 }
 
 /**
- * ⚠️ Workers KV is NOT linearizable. This adapter implements mppx's
+ * ⚠️ Workers KV is NOT linearizable. This adapter satisfies mppx's
  * `AtomicStore` interface mechanically, but concurrent writers to the same
- * key can silently lose updates (KV's "last-write-wins" semantics over its
+ * key can silently lose updates (last-write-wins over KV's
  * eventual-consistency window, up to ~60s globally).
  *
- * Safe for:
- * - **Charge-intent services** — challenge-id replay protection is the only
- *   shared state. Collisions within mppx's replay window are astronomically
- *   unlikely.
- * - **Low-concurrency session services** — single-user sessions where voucher
- *   accounting can't race itself.
- *
- * UNSAFE for:
- * - **Session-intent services with real concurrency** — two vouchers for the
- *   same channel arriving within KV's eventual-consistency window can corrupt
- *   `cumulativeAmount` accounting.
+ * Safe for: charge-intent services (replay protection only), low-concurrency
+ * sessions. UNSAFE for: real-concurrency session services (two vouchers for
+ * the same channel arriving within the consistency window can corrupt
+ * `cumulativeAmount`).
  *
  * For linearizable storage on Workers, use a Durable Object-backed store
  * (future work). This file is the cheap path for v1.
- *
- * Usage:
- * ```ts
- * // wrangler.toml
- * // [[kv_namespaces]]
- * // binding = "PAYWRAP_KV"
- * // id = "<your-namespace-id>"
- *
- * const store = workersKvStore(env.PAYWRAP_KV);
- * ```
  */
 export const workersKvStore = (kv: MinimalKVNamespace) => Store.cloudflare(wrapKVForMppx(kv));
 
-/**
- * Low-level wrapper exposed for advanced users who want to compose the KV
- * adapter with additional behavior (metrics, logging) before handing to
- * `Store.cloudflare`. Most consumers should use {@link workersKvStore}.
- */
 export const wrapKVForMppx = (kv: MinimalKVNamespace) => ({
 	async get(key: string) {
 		return kv.get(key);
@@ -64,11 +40,7 @@ export const wrapKVForMppx = (kv: MinimalKVNamespace) => ({
 	async delete(key: string) {
 		await kv.delete(key);
 	},
-	/**
-	 * NON-ATOMIC read-compute-write. See file-level docblock: KV has no
-	 * compare-and-swap, so concurrent writers to the same key can lose
-	 * updates. Honest implementation over a fake atomicity wrapper.
-	 */
+	// Non-atomic read-compute-write — KV has no CAS. See file docblock.
 	async update<result>(
 		key: string,
 		fn: (current: string | null) => Change<string, result>,

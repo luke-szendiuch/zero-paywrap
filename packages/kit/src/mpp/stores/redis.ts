@@ -4,18 +4,14 @@ import { Store } from "mppx/server";
 type Change<value, result> = Store.Change<value, result>;
 
 /**
- * Wrap an ioredis client as an mppx `AtomicStore` and return an mppx store.
+ * Wrap an ioredis client as an mppx atomic store.
  *
- * mppx's `Store.redis()` requires an atomic `update` callback because Tempo
- * session voucher accounting must be linearizable across workers. ioredis
- * doesn't ship a read-modify-write primitive, but WATCH/MULTI/EXEC gives us
- * one — if the key changes between WATCH and EXEC, EXEC returns null and we
- * retry.
+ * mppx's voucher accounting must be linearizable across workers — ioredis has
+ * no CAS primitive but WATCH/MULTI/EXEC gives us one (if the key changes
+ * between WATCH and EXEC, EXEC returns null → retry).
  *
- * Use a dedicated Redis logical DB (passed via the `IORedis` constructor's
- * `db:` option) so mppx's channel keys don't collide with BullMQ's queue
- * keys. Keeping them separate makes it trivial to purge one without
- * touching the other during ops.
+ * Use a dedicated logical DB (pass `db:` to the IORedis constructor) so
+ * mppx's channel keys don't collide with BullMQ queues.
  */
 export const redisStore = (redis: IORedis) => Store.redis(wrapIoredisForMppx(redis));
 

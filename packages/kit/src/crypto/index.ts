@@ -3,15 +3,10 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 /**
  * AES-256-GCM helpers for encrypting secrets at rest.
  *
- * Use case: a paid service provisions a resource whose access credentials
- * (DB password, API token, etc.) must be stored for later retrieval by the
- * paying wallet. Storing them plaintext means losing the DB leaks every
- * credential; AEAD-encrypting them with a separate per-deployment key means
- * the DB alone is useless without also compromising the encryption key.
- *
  * Layout: `iv(12) || tag(16) || ciphertext`. GCM is AEAD so the tag covers
- * integrity of the ciphertext; a mutated blob fails `final()` with an
- * authentication error.
+ * integrity; mutated blobs fail `final()` with an auth error. Use case: a
+ * paid service stores provisioned credentials so losing the DB alone doesn't
+ * leak them (also need the separate per-deployment key).
  */
 
 const IV_BYTES = 12;
@@ -25,14 +20,10 @@ const keyBuf = (hexKey: string): Buffer => {
 	return Buffer.from(hex, "hex");
 };
 
-/** Generate a fresh 32-byte key as `0x`-prefixed hex. */
+/** Fresh 32-byte key as `0x`-prefixed hex. */
 export const generateEncryptionKey = (): string => `0x${randomBytes(32).toString("hex")}`;
 
-/**
- * Encrypt an arbitrary JSON-serializable value. Returns a single `Buffer` you
- * can store as `bytea` in Postgres or base64-string anywhere else. The plaintext
- * is `JSON.stringify`'d — don't pass a function or a circular object.
- */
+/** Encrypt a JSON-serializable value. Plaintext is `JSON.stringify`'d. */
 export const encryptSecret = <T>(value: T, keyHex: string): Buffer => {
 	const iv = randomBytes(IV_BYTES);
 	const cipher = createCipheriv("aes-256-gcm", keyBuf(keyHex), iv);
@@ -42,10 +33,7 @@ export const encryptSecret = <T>(value: T, keyHex: string): Buffer => {
 	return Buffer.concat([iv, tag, enc]);
 };
 
-/**
- * Decrypt a blob produced by `encryptSecret`. Throws on authentication
- * failure (wrong key, truncation, tampering).
- */
+/** Decrypt a blob from `encryptSecret`. Throws on auth failure. */
 export const decryptSecret = <T>(ciphertext: Buffer, keyHex: string): T => {
 	if (ciphertext.length <= IV_BYTES + TAG_BYTES) {
 		throw new Error("paywrap/crypto: ciphertext too short");
