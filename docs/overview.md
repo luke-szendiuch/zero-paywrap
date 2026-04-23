@@ -101,12 +101,13 @@ Not yet shipped:
 │                 extractCredential, buildXxxChallenge,        │
 │                 VerifiedCredential (branded)                 │
 │                                                              │
-│ /signing      — signVoucher, buildVoucherCredential          │
+│ /signing      — signVoucher, buildVoucherCredential,         │
+│                 buildChargeCredential                        │
 │ /crypto       — AES-256-GCM encryptSecret/decryptSecret      │
 │ /manifest     — buildPaywrapJson (.well-known/paywrap.json)  │
 │ /health       — aggregateHealthProbes                        │
 │ /setup        — generateWallet, prefundWallet, register...   │
-│ /testing      — seedChannel (test-only helper)               │
+│ /testing      — seedChannel, stubVerifyCredential            │
 └───────────┬─────────────────────────────────────────────────┘
             │ consumes
             ▼
@@ -190,6 +191,7 @@ Both services should remain the canonical "what a real consumer looks like" refe
 - **VerifiedCredential** — branded type that can only be produced by `verifyWithScope`. Encodes "this credential passed full verification against expected scope" in the type system.
 - **Tempo** — the L1 we transact on. Chain id 4217. USDC contract at `0x20C0...8b50`. Escrow at `0x33b9...4f25`.
 - **feeToken** — a Tempo-specific chain config field (`feeToken: USDC`) that routes gas payment through USDC balance instead of a native token. Lets a service wallet hold only USDC.
+- **`Payment <b64>` header** — the serialized wire format for a credential. `Credential.serialize` (and by extension `buildVoucherCredential` / `buildChargeCredential` from `@zerorun/paywrap/signing`) returns the FULL Authorization header value including the `Payment ` prefix. Pass the return value verbatim as `authorization: <result>` — do NOT wrap it in another `"Payment "`.
 
 ---
 

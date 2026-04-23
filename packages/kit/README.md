@@ -75,6 +75,12 @@ curl -X POST "https://api.example.com/generate" \
 # {"result":"..."}
 ```
 
+> **Authorization header is ready-to-send.** `buildVoucherCredential` and
+> `buildChargeCredential` (from `@zerorun/paywrap/signing`) return the FULL
+> Authorization header value, including the `Payment ` prefix. Pass it as-is:
+> `fetch(url, { headers: { authorization: await buildChargeCredential(...) } })`.
+> Do not wrap it in another `"Payment "`.
+
 ### Path B — Start from scratch with the CLI
 
 *"I don't have a service yet; I want the full scaffold."*
@@ -105,8 +111,8 @@ The kit ships **no root barrel** — import only the subpath you need. This keep
 |---|---|---|
 | `@zerorun/paywrap/mpp` | `createPaywrapMpp`, `memoryStore`, `redisStore`, `workersKvStore`, `closeSessionOnChain`, `verifyWithScope`, `assertVoucherAdvances`, `TEMPO_ESCROW`, `TEMPO_USDC`, `TEMPO_CHAIN_ID`, `tempoChain` | Bootstrapping mppx, choosing a channel-state store (in-memory / Redis / Workers KV), verifying credentials at route handlers, closing channels on-chain. |
 | `@zerorun/paywrap/auth` | `buildSessionChallenge`, `buildChargeChallenge`, `buildProofChallenge`, `payerFromCredential`, `VerifiedCredential`, `VERIFIED` (brand symbol) | Minting 402 challenges from any framework, resolving the authenticated payer address from a verified credential. |
-| `@zerorun/paywrap/signing` | `signVoucher`, `buildVoucherCredential`, `channelIdFromLabel` | Buyer-side code (CLI, agent) producing signed Tempo vouchers. Useful in integration tests too. |
-| `@zerorun/paywrap/testing` | `seedChannel` | Seeding a `ChannelStore` with a fake-open channel in tests. Not for production. |
+| `@zerorun/paywrap/signing` | `signVoucher`, `buildVoucherCredential`, `buildChargeCredential`, `channelIdFromLabel` | Buyer-side code (CLI, agent) producing signed Tempo vouchers / charge credentials. Useful in integration tests too. |
+| `@zerorun/paywrap/testing` | `seedChannel`, `stubVerifyCredential` | Seeding a `ChannelStore` with a fake-open channel in tests; stubbing `mppx.verifyCredential` to skip on-chain settlement. Not for production. |
 | `@zerorun/paywrap/crypto` | `encryptSecret`, `decryptSecret`, AES-256-GCM helpers | At-rest encryption of upstream credentials (connection strings, API tokens) stored in your DB. |
 | `@zerorun/paywrap/manifest` | `buildPaywrapJson` | Serving `/.well-known/paywrap.json` — the service manifest indexers + agents use to learn your pricing. |
 | `@zerorun/paywrap/health` | `aggregateHealthProbes` | Assembling `/healthz` responses from per-subsystem probes. |
