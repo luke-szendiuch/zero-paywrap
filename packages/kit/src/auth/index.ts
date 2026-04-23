@@ -68,6 +68,40 @@ export type ChallengeErrorResponse = {
 };
 
 /**
+ * Shared wrapper for challenge builders. Invokes `fn()` to produce the
+ * mppx challenge, serializes it into a 402 `ChallengeResponse`, and
+ * converts any throw into a `ChallengeErrorResponse` with a stable
+ * `challenge_generation_failed` error code.
+ *
+ * Keeping the envelope in one place means the three public builders
+ * differ only in the one line that asks mppx for the underlying
+ * challenge.
+ */
+const tryBuildChallenge = async (
+	detail: string,
+	// biome-ignore lint/suspicious/noExplicitAny: Challenge is generic over method
+	fn: () => Promise<any>,
+): Promise<ChallengeResponse | ChallengeErrorResponse> => {
+	try {
+		const challenge = await fn();
+		return {
+			status: 402,
+			headers: { "www-authenticate": Challenge.serialize(challenge) },
+			body: { challenge, detail },
+		};
+	} catch (err) {
+		return {
+			status: 500,
+			headers: {},
+			body: {
+				error: "challenge_generation_failed",
+				reason: err instanceof Error ? err.message : String(err),
+			},
+		};
+	}
+};
+
+/**
  * Build a 402 `tempo.session` challenge — the paid path. Call this from
  * paid routes when the request arrives without a valid credential. The
  * client opens a channel (the voucher covers `amount`) and retries.
@@ -90,7 +124,7 @@ export type ChallengeErrorResponse = {
  * to `"request"` at method registration; passing here is usually
  * redundant but supported for per-challenge overrides).
  */
-export const buildSessionChallenge = async (
+export const buildSessionChallenge = (
 	mppx: MppxInstance,
 	opts: {
 		amount: bigint | string;
@@ -100,33 +134,49 @@ export const buildSessionChallenge = async (
 		suggestedDeposit?: bigint | string;
 		unitType?: string;
 	},
-): Promise<ChallengeResponse | ChallengeErrorResponse> => {
-	try {
-		const amountStr = opts.amount.toString();
-		const depositStr = (opts.suggestedDeposit ?? opts.amount).toString();
-		const challenge = await mppx.challenge.tempo.session({
-			amount: amountStr,
-			suggestedDeposit: depositStr,
+): Promise<ChallengeResponse | ChallengeErrorResponse> =>
+	tryBuildChallenge(opts.detail, () =>
+		mppx.challenge.tempo.session({
+			amount: opts.amount.toString(),
+			suggestedDeposit: (opts.suggestedDeposit ?? opts.amount).toString(),
 			...(opts.unitType !== undefined ? { unitType: opts.unitType } : {}),
 			scope: opts.scope,
 			...(opts.meta ? { meta: opts.meta } : {}),
-		});
-		return {
-			status: 402,
-			headers: { "www-authenticate": Challenge.serialize(challenge) },
-			body: { challenge, detail: opts.detail },
-		};
-	} catch (err) {
-		return {
-			status: 500,
-			headers: {},
-			body: {
-				error: "challenge_generation_failed",
-				reason: err instanceof Error ? err.message : String(err),
-			},
-		};
-	}
-};
+		}),
+	);
+
+/**
+ * Build a 402 `tempo.charge` challenge — the single-shot paid path. Client
+ * signs a proof bound to a non-zero `amount` and mppx settles that amount
+ * immediately on verify. No channel, no voucher accounting. Suitable for
+ * one-request-one-charge services that don't need session semantics.
+ *
+ * `scope` is HMAC-bound into the challenge id for the same replay-safety
+ * reason as `buildSessionChallenge`.
+ *
+ * `amount` is passed through to mppx. mppx's charge method accepts a
+ * HUMAN-decimal string (e.g. `"0.02"` — it parses via `parseUnits`). A
+ * `bigint` flows through via `.toString()` which sellers can use when they
+ * keep their own units. For zero-amount (pure proof-of-wallet) challenges
+ * use `buildProofChallenge` instead — it's the documented name for that
+ * flow.
+ */
+export const buildChargeChallenge = (
+	mppx: MppxInstance,
+	opts: {
+		amount: bigint | string;
+		scope: string;
+		detail: string;
+		meta?: Record<string, string>;
+	},
+): Promise<ChallengeResponse | ChallengeErrorResponse> =>
+	tryBuildChallenge(opts.detail, () =>
+		mppx.challenge.tempo.charge({
+			amount: opts.amount.toString(),
+			scope: opts.scope,
+			...(opts.meta ? { meta: opts.meta } : {}),
+		}),
+	);
 
 /**
  * Build a 402 `tempo.charge` challenge with `amount="0"` — the "proof
@@ -134,31 +184,16 @@ export const buildSessionChallenge = async (
  * wallet, without moving funds or opening a channel. Used by read/delete
  * routes that need wallet-authz without payment.
  */
-export const buildProofChallenge = async (
+export const buildProofChallenge = (
 	mppx: MppxInstance,
 	opts: { scope: string; detail: string; meta?: Record<string, string> },
-): Promise<ChallengeResponse | ChallengeErrorResponse> => {
-	try {
-		const challenge = await mppx.challenge.tempo.charge({
+): Promise<ChallengeResponse | ChallengeErrorResponse> =>
+	tryBuildChallenge(opts.detail, () =>
+		mppx.challenge.tempo.charge({
 			amount: "0",
 			scope: opts.scope,
 			...(opts.meta ? { meta: opts.meta } : {}),
-		});
-		return {
-			status: 402,
-			headers: { "www-authenticate": Challenge.serialize(challenge) },
-			body: { challenge, detail: opts.detail },
-		};
-	} catch (err) {
-		return {
-			status: 500,
-			headers: {},
-			body: {
-				error: "challenge_generation_failed",
-				reason: err instanceof Error ? err.message : String(err),
-			},
-		};
-	}
-};
+		}),
+	);
 
 export { Credential, Challenge };
