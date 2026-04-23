@@ -24,6 +24,37 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.19.17)
 
+  examples/hono-worker:
+    dependencies:
+      '@zerorun/paywrap':
+        specifier: workspace:*
+        version: link:../../packages/kit
+      '@zerorun/paywrap-adapter-hono':
+        specifier: workspace:*
+        version: link:../../packages/adapters/hono
+      hono:
+        specifier: ^4.8.0
+        version: 4.12.14
+      viem:
+        specifier: ^2.21.55
+        version: 2.48.4(typescript@5.9.3)(zod@4.3.6)
+    devDependencies:
+      '@cloudflare/workers-types':
+        specifier: ^4.20241224.0
+        version: 4.20260423.1
+      '@types/node':
+        specifier: ^22.10.2
+        version: 22.19.17
+      mppx:
+        specifier: ^0.6.2
+        version: 0.6.3(hono@4.12.14)(typescript@5.9.3)(viem@2.48.4(typescript@5.9.3)(zod@4.3.6))
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.8
+        version: 2.1.9(@types/node@22.19.17)
+
   packages/adapters/fastify:
     dependencies:
       '@zerorun/paywrap':
@@ -196,6 +227,9 @@ packages:
 
   '@clack/prompts@0.8.2':
     resolution: {integrity: sha512-6b9Ab2UiZwJYA9iMyboYyW9yJvAO9V753ZhS+DHKEjZRKAxPPOb7MXXu84lsPFG+vZt6FRFniZ8rXi+zCIw4yQ==}
+
+  '@cloudflare/workers-types@4.20260423.1':
+    resolution: {integrity: sha512-SHIc0NeJMtn0sW043eWtMxYFbJ9VPSLkcx+FEqCk0uZLD3HrWT+5xWhm6EYiOYDg0vnrlXNHcu2ly/01zDh3bw==}
 
   '@esbuild/aix-ppc64@0.21.5':
     resolution: {integrity: sha512-1SDgH6ZSPTlggy1yI6+Dbkiz8xzpHJEVAlF/AM1tHPLsf5STom9rwtjE4hKAF20FfXXNTFqEYXyJNWh1GiZedQ==}
@@ -1510,6 +1544,8 @@ snapshots:
       '@clack/core': 0.3.5
       picocolors: 1.1.1
       sisteransi: 1.0.5
+
+  '@cloudflare/workers-types@4.20260423.1': {}
 
   '@esbuild/aix-ppc64@0.21.5':
     optional: true

@@ -1,0 +1,20 @@
+name = "paywrap-hono-joke"
+main = "src/worker.ts"
+compatibility_date = "2024-12-01"
+
+# Required because mppx pulls in `node:util` transitively — see
+# packages/adapters/hono/README.md.
+compatibility_flags = ["nodejs_compat"]
+
+# Public URL of this worker — used as the MPP realm. Override in prod.
+[vars]
+PUBLIC_BASE_URL = "https://paywrap-hono-joke.example.workers.dev"
+TEMPO_RPC_URL = "https://rpc.tempo.xyz"
+
+# Populate via `wrangler secret put WALLET_PRIVATE_KEY` and
+# `wrangler secret put MPP_SECRET_KEY`.
+
+# Create with: `wrangler kv:namespace create PAYWRAP_KV`
+[[kv_namespaces]]
+binding = "PAYWRAP_KV"
+id = "REPLACE_WITH_REAL_NAMESPACE_ID"

@@ -1,0 +1,26 @@
+{
+	"name": "@zerorun/paywrap-example-hono-worker",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"description": "Example Cloudflare Worker: Hono + @zerorun/paywrap charge-intent /v1/joke endpoint.",
+	"scripts": {
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run",
+		"dev": "wrangler dev",
+		"deploy": "wrangler deploy"
+	},
+	"dependencies": {
+		"@zerorun/paywrap": "workspace:*",
+		"@zerorun/paywrap-adapter-hono": "workspace:*",
+		"hono": "^4.8.0",
+		"viem": "^2.21.55"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "^4.20241224.0",
+		"@types/node": "^22.10.2",
+		"mppx": "^0.6.2",
+		"typescript": "^5.7.2",
+		"vitest": "^2.1.8"
+	}
+}
