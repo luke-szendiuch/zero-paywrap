@@ -38,26 +38,30 @@ Living doc. Last updated: 2026-04-23. Update when work lands.
 
 Effort: ~1 hour to push + 30 min to wire Render env.
 
-### 2. Buyer SDK: `@zeroclickai/paywrap-client`
-Ship `createPayingFetch({ account, maxPay, chainBridge? })` which returns a `typeof fetch` that transparently handles 402s for MPP (and later x402). Target behavior:
+### 2. Refactor Zero CLI's `payment-service.ts` to use kit primitives
+Reassessed (2026-04-23): we originally scoped a separate `@zeroclickai/paywrap-client` buyer SDK with `createPayingFetch`. **That's deferred until concrete demand from a programmatic agent framework surfaces.** Today 95%+ of MPP buyers go through the Zero CLI, which works fine — there's no urgent programmatic-in-code use case.
 
-```ts
-const payingFetch = createPayingFetch({ account, maxPay: 0.50 });
-const res = await payingFetch("https://api.example.com/generate", { method: "POST", body });
-// Handled internally: 402 detection → channel open if needed → sign voucher → retry → Response
-```
+The valuable, immediate work is **dogfooding the kit's primitives inside the Zero CLI itself.** `zero/packages/cli/src/services/payment-service.ts` currently hand-rolls ~150 LOC of MPP plumbing (voucher signing, challenge parsing, credential extraction, balance checks). Most of that overlaps with what the kit already exports:
 
-**Why this matters:** every buyer today reimplements ~150 LOC of MPP plumbing (see `zero/packages/cli/src/services/payment-service.ts`). Without a buyer SDK, sellers don't get customers. Currently the highest-leverage open item.
+- `buildChargeCredential` / `buildVoucherCredential` (signing)
+- `extractCredential` (auth)
+- `Challenge.deserialize` (re-exportable from kit/auth if needed)
+- tempo constants (`TEMPO_USDC`, `TEMPO_ESCROW`, `TEMPO_CHAIN_ID`, `tempoChain` with `feeToken`)
 
-**Building blocks inside the SDK:**
-- `discoverPaywrap(url)` — fetch + zod-validate `.well-known/paywrap.json`
-- `parseChallengeFromResponse(response)` — detect 402, parse www-authenticate
-- `openChannel({ payer, escrow, deposit, chainId, rpcUrl })` — on-chain deposit for session
-- `createBuyerSession({ payer, channelId })` — stateful voucher incrementer
-- `bridgeToTempo({ fromChain, amount, payer })` — Relay SDK wrapper
-- `checkUsdcBalance({ payer, chain })` — balance probe
+Refactoring `payment-service.ts` onto kit primitives would:
+- Shrink it from ~150 → ~40 LOC
+- Remove duplication between Zero CLI and kit (both sides drift over time otherwise)
+- Prove the kit is sufficient for real-world buying — the acceptance test that validates we don't *need* a separate SDK yet
+- Surface any missing primitives as kit PRs rather than parallel implementations
 
-Effort: ~1-2 days to ship a credible v0.0.1. Dogfood target: refactor `zero` CLI's `payment-service.ts` onto it — ~150 LOC deletion in Zero. That's the acceptance test.
+Effort: ~3-4 hours. Low risk because the Zero CLI already has integration tests for its paid-fetch path.
+
+### 2b. Document the programmatic-buying pattern (30 min)
+Add a section to `packages/kit/README.md` titled "Buying paywrap services programmatically" with two snippets:
+- **Charge intent (~15 LOC)**: `fetch → if 402 → buildChargeCredential → retry`. Copy-pasteable.
+- **Session intent (~40 LOC)**: opens a channel, tracks cumulative amount, signs voucher per request. Points at `buildVoucherCredential` + explains the channel lifecycle.
+
+This covers the use case a separate SDK would address, without the package overhead. If demand for an SDK materializes later, we already have validated building blocks.
 
 ### 3. Dogfood round 2 against published packages
 The round-1 dogfood (fresh agent, `examples/hono-worker/`) ran against `file:../` deps. A real external dev starts from `pnpm add @zeroclickai/paywrap @zeroclickai/paywrap-adapter-hono`. Spin up a fresh agent (no context) with ONLY:
@@ -101,6 +105,20 @@ Deterministic signer + in-memory chain so downstream services can integration-te
 
 ### x402 support
 When the x402 spec stabilizes + we have concrete use case, land primitives in `packages/kit/src/x402/` parallel to MPP. Tree-shake friendly — existing consumers don't pay the cost unless they opt in.
+
+### `@zeroclickai/paywrap-client` — deferred, demand-driven
+Originally scoped as priority #2. Demoted after honest review: the Zero CLI handles 95%+ of MPP buying today. A separate SDK package targets **programmatic agents writing code** (LangChain tools, Cloudflare AI agents, OpenAI Agents SDK integrations) who need `createPayingFetch` inside their tool-use loop rather than shelling out to `zero fetch`. That's a theoretical use case at our current scale.
+
+**Ship it when:** someone building an agent framework plugin specifically asks, OR when Zero CLI's `payment-service.ts` refactor (step 2 above) surfaces a clean 40-LOC primitive that's obviously also useful to non-CLI buyers. Until then, the kit primitives + documented pattern are sufficient.
+
+**What it would contain** (reference, in case we build it later):
+- `createPayingFetch({ account, maxPay, chainBridge? })` — wraps `fetch`, handles 402 detection + retry
+- `discoverPaywrap(url)` — fetch + zod-validate `.well-known/paywrap.json`
+- `parseChallengeFromResponse(response)` — parse www-authenticate
+- `openChannel({ ... })` — on-chain deposit for session intent
+- `createBuyerSession({ payer, channelId })` — stateful voucher incrementer
+- `bridgeToTempo({ fromChain, amount, payer })` — Relay SDK wrapper
+- `checkUsdcBalance({ payer, chain })` — balance probe
 
 ### Server-side manifest filter at Netlify
 Netlify reaper currently pages `GET /sites` + filters by `metadata.expires_at < now` client-side. If Netlify exposes server-side metadata filtering on the sites endpoint, the reaper scales linearly with expired-site count instead of total-site count. Not a v1 blocker.
