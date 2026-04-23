@@ -11,7 +11,8 @@ import {
 import { TEMPO_CHAIN_ID, TEMPO_ESCROW } from "../src/mpp/constants.js";
 import { createPaywrapMpp } from "../src/mpp/mppx.js";
 import { memoryStore } from "../src/mpp/stores.js";
-import { channelIdFromLabel, seedChannel } from "../src/signing/index.js";
+import { channelIdFromLabel } from "../src/signing/index.js";
+import { seedChannel } from "../src/testing/index.js";
 
 const KNOWN_PK = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80" as const;
 

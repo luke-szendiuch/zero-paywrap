@@ -4,12 +4,8 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import { TEMPO_CHAIN_ID, TEMPO_ESCROW, TEMPO_USDC } from "../src/mpp/constants.js";
 import { memoryStore } from "../src/mpp/stores.js";
-import {
-	buildVoucherCredential,
-	channelIdFromLabel,
-	seedChannel,
-	signVoucher,
-} from "../src/signing/index.js";
+import { buildVoucherCredential, channelIdFromLabel, signVoucher } from "../src/signing/index.js";
+import { seedChannel } from "../src/testing/index.js";
 
 const RECIPIENT = "0x1111111111111111111111111111111111111111" as const;
 const SECRET_KEY = "a".repeat(64);

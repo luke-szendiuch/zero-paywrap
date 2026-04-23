@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest";
 import { TEMPO_CHAIN_ID, TEMPO_ESCROW } from "../../src/mpp/constants.js";
 import { closeSessionOnChain, isBenignCloseError } from "../../src/mpp/settle.js";
 import { memoryStore } from "../../src/mpp/stores.js";
-import { channelIdFromLabel, seedChannel } from "../../src/signing/index.js";
+import { channelIdFromLabel } from "../../src/signing/index.js";
+import { seedChannel } from "../../src/testing/index.js";
 
 describe("mpp.settle.isBenignCloseError", () => {
 	it.each([

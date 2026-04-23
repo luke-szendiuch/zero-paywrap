@@ -7,6 +7,7 @@
 		"./mpp": { "types": "./dist/mpp/index.d.ts", "import": "./dist/mpp/index.js" },
 		"./auth": { "types": "./dist/auth/index.d.ts", "import": "./dist/auth/index.js" },
 		"./signing": { "types": "./dist/signing/index.d.ts", "import": "./dist/signing/index.js" },
+		"./testing": { "types": "./dist/testing/index.d.ts", "import": "./dist/testing/index.js" },
 		"./crypto": { "types": "./dist/crypto/index.d.ts", "import": "./dist/crypto/index.js" },
 		"./manifest": { "types": "./dist/manifest/index.d.ts", "import": "./dist/manifest/index.js" },
 		"./health": { "types": "./dist/health/index.d.ts", "import": "./dist/health/index.js" },
