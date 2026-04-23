@@ -4,7 +4,12 @@ import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import { TEMPO_CHAIN_ID, TEMPO_ESCROW, TEMPO_USDC } from "../src/mpp/constants.js";
 import { memoryStore } from "../src/mpp/stores.js";
-import { buildVoucherCredential, channelIdFromLabel, signVoucher } from "../src/signing/index.js";
+import {
+	buildChargeCredential,
+	buildVoucherCredential,
+	channelIdFromLabel,
+	signVoucher,
+} from "../src/signing/index.js";
 import { seedChannel } from "../src/testing/index.js";
 
 const RECIPIENT = "0x1111111111111111111111111111111111111111" as const;
@@ -94,6 +99,69 @@ describe("signing.buildVoucherCredential", () => {
 		expect(credential.challenge.opaque?.route).toBe("/v1/provision");
 		expect(credential.challenge.opaque?.sku).toBe("alpha");
 		expect(credential.challenge.opaque?._mppx_scope).toBe("scoped");
+	});
+});
+
+describe("signing.buildChargeCredential", () => {
+	it("produces a `Payment ...` header that deserializes to a tempo.charge proof credential", async () => {
+		const payer = privateKeyToAccount(generatePrivateKey());
+		const serialized = await buildChargeCredential({
+			payer,
+			recipient: RECIPIENT,
+			amountMicro: 20_000n,
+			realm: "api.example.com",
+			secretKey: SECRET_KEY,
+			scope: "joke:1",
+		});
+
+		expect(typeof serialized).toBe("string");
+		expect(serialized.startsWith("Payment ")).toBe(true);
+
+		const credential = Credential.deserialize<{ signature: string; type: string }>(serialized);
+		expect(credential.payload.type).toBe("proof");
+		expect(credential.payload.signature).toMatch(/^0x[0-9a-fA-F]{130}$/);
+		expect(credential.challenge.realm).toBe("api.example.com");
+		expect(credential.challenge.method).toBe("tempo");
+		expect(credential.challenge.intent).toBe("charge");
+		expect(credential.challenge.request.amount).toBe("20000");
+		// scope ends up under the reserved `_mppx_scope` opaque key
+		expect(credential.challenge.opaque?._mppx_scope).toBe("joke:1");
+		// source is a did:pkh with the payer's address + default chainId (4217)
+		expect(credential.source?.toLowerCase()).toBe(
+			`did:pkh:eip155:${TEMPO_CHAIN_ID}:${payer.address}`.toLowerCase(),
+		);
+	});
+
+	it("produces a zero-amount proof credential when amountMicro === 0n", async () => {
+		const payer = privateKeyToAccount(generatePrivateKey());
+		const serialized = await buildChargeCredential({
+			payer,
+			recipient: RECIPIENT,
+			amountMicro: 0n,
+			realm: "api.example.com",
+			secretKey: SECRET_KEY,
+			scope: "auth:1",
+		});
+
+		const credential = Credential.deserialize<{ type: string }>(serialized);
+		expect(credential.challenge.request.amount).toBe("0");
+		expect(credential.payload.type).toBe("proof");
+	});
+
+	it("merges extra meta into opaque alongside the scope", async () => {
+		const payer = privateKeyToAccount(generatePrivateKey());
+		const serialized = await buildChargeCredential({
+			payer,
+			recipient: RECIPIENT,
+			amountMicro: 1_000n,
+			realm: "api.example.com",
+			secretKey: SECRET_KEY,
+			scope: "m:1",
+			meta: { sku: "alpha" },
+		});
+		const credential = Credential.deserialize(serialized);
+		expect(credential.challenge.opaque?.sku).toBe("alpha");
+		expect(credential.challenge.opaque?._mppx_scope).toBe("m:1");
 	});
 });
 
