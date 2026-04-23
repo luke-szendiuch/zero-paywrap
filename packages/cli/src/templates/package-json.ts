@@ -16,8 +16,10 @@ export const packageJsonTemplate = (config: ScaffoldConfig): string => {
 	if (config.framework === "fastify") {
 		deps.fastify = "^5.2.0";
 		deps["fastify-type-provider-zod"] = "^4.0.2";
+		deps["@zerorun/paywrap-adapter-fastify"] = "^0.0.1";
 	}
-	if (config.storage === "postgres-drizzle") {
+	// Charge intent is stateless — no DB. Only wire drizzle/pg for session.
+	if (config.intent === "session" && config.storage === "postgres-drizzle") {
 		deps["drizzle-orm"] = "^0.38.0";
 		deps.pg = "^8.13.1";
 	}
@@ -34,7 +36,7 @@ export const packageJsonTemplate = (config: ScaffoldConfig): string => {
 		typescript: "^5.7.2",
 		vitest: "^2.1.8",
 	};
-	if (config.storage === "postgres-drizzle") {
+	if (config.intent === "session" && config.storage === "postgres-drizzle") {
 		devDeps["@types/pg"] = "^8.11.10";
 		devDeps["drizzle-kit"] = "^0.30.1";
 	}
@@ -49,7 +51,7 @@ export const packageJsonTemplate = (config: ScaffoldConfig): string => {
 		test: "vitest run",
 		setup: "tsx src/setup/index.ts",
 	};
-	if (config.storage === "postgres-drizzle") {
+	if (config.intent === "session" && config.storage === "postgres-drizzle") {
 		scripts["db:generate"] = "drizzle-kit generate";
 		scripts["db:migrate"] = "tsx src/db/migrate.ts";
 	}

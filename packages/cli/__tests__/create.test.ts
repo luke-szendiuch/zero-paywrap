@@ -220,7 +220,7 @@ describe("runCreate (charge intent)", () => {
 		expect(things.includes("/extend")).toBe(false);
 	});
 
-	it("imports buildChargeChallenge (NOT buildSessionChallenge) for charge intent", async () => {
+	it("uses the charge-intent fastify adapter helpers (NOT session ones) for charge intent", async () => {
 		const prompter = makeStubPrompter({
 			serviceName: "charge-svc",
 			intent: "charge",
@@ -235,8 +235,41 @@ describe("runCreate (charge intent)", () => {
 		});
 		await runCreate(target, { prompter, skipInstall: true });
 		const things = readFileSync(join(target, "src/routes/things.ts"), "utf8");
-		expect(things.includes("buildChargeChallenge")).toBe(true);
-		expect(things.includes("buildSessionChallenge")).toBe(false);
+		expect(things.includes("sendChargeChallenge")).toBe(true);
+		expect(things.includes("sendSessionChallenge")).toBe(false);
+	});
+
+	it("writes a stateless-scaffold signal (no DB model, no drizzle deps, thing-client stub) for charge intent", async () => {
+		const prompter = makeStubPrompter({
+			serviceName: "charge-svc",
+			intent: "charge",
+			priceUsdc: "0.02",
+			scope: "charge-svc:1",
+			durationSeconds: "2592000",
+			framework: "fastify",
+			// User picks postgres-drizzle at the prompt but charge overrides it.
+			storage: "postgres-drizzle",
+			queue: "none",
+			hosting: "skip",
+			generateWalletNow: false,
+		});
+		await runCreate(target, { prompter, skipInstall: true });
+		// No drizzle or pg deps in package.json.
+		const pkg = readFileSync(join(target, "package.json"), "utf8");
+		expect(pkg.includes("drizzle-orm")).toBe(false);
+		expect(pkg.includes('"pg"')).toBe(false);
+		expect(pkg.includes("drizzle-kit")).toBe(false);
+		// No db/ or models/ files on disk.
+		expect(existsSync(join(target, "src/db/client.ts"))).toBe(false);
+		expect(existsSync(join(target, "src/models/thing.ts"))).toBe(false);
+		expect(existsSync(join(target, "drizzle.config.ts"))).toBe(false);
+		// The stateless typed-client stub IS present.
+		expect(existsSync(join(target, "src/services/thing-client.ts"))).toBe(true);
+		// No DATABASE_URL in env schema or example.
+		const envSchema = readFileSync(join(target, "src/core/env.ts"), "utf8");
+		expect(envSchema.includes("DATABASE_URL")).toBe(false);
+		const envExample = readFileSync(join(target, ".env.example"), "utf8");
+		expect(envExample.includes("DATABASE_URL")).toBe(false);
 	});
 });
 

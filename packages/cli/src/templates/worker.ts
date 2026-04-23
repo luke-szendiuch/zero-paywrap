@@ -49,7 +49,7 @@ main().catch((e) => {
 
 export const workerStartTemplate = (config: ScaffoldConfig): string => {
 	const isSession = config.intent === "session";
-	const sessionCronBlock = isSession
+	const cronBlock = isSession
 		? `\tconst sessionSettle = makeSessionSettleJob(mpp);
 \tconst sessionInterval = setInterval(
 \t\t() => sessionSettle().catch(() => undefined),
@@ -58,15 +58,25 @@ export const workerStartTemplate = (config: ScaffoldConfig): string => {
 \tsessionInterval.unref();
 \tintervals.push(sessionInterval);
 `
-		: "";
-	const sessionImport = isSession
+		: `\t// Charge-intent reaper — runs hourly, cleans up upstream resources
+\t// whose expiresAt has passed. Implementation in ./jobs/reaper-job.ts
+\t// is provider-specific; the cron is wired here so you remember to
+\t// implement it.
+\tconst reaperInterval = setInterval(
+\t\t() => reaperJob({ env, mpp }).catch(() => undefined),
+\t\t60 * 60 * 1000,
+\t);
+\treaperInterval.unref();
+\tintervals.push(reaperInterval);
+`;
+	const cronImport = isSession
 		? `import { makeSessionSettleJob } from "./jobs/session-settle-job.js";\n`
-		: "";
+		: `import { reaperJob } from "./jobs/reaper-job.js";\n`;
 
 	return `import type { PaywrapMpp } from "@zerorun/paywrap/mpp";
 import { Worker } from "bullmq";
 import type { Env } from "../core/env.js";
-${sessionImport}import { type ThingJobData, makeConnection } from "./queue.js";
+${cronImport}import { type ThingJobData, makeConnection } from "./queue.js";
 
 export type WorkerRuntime = {
 \tworker: Worker<ThingJobData>;
@@ -87,7 +97,7 @@ export const startWorkerRuntime = (env: Env, mpp: PaywrapMpp): WorkerRuntime => 
 \t\t{ connection, concurrency: 5 },
 \t);
 \tconst intervals: NodeJS.Timeout[] = [];
-${sessionCronBlock}
+${cronBlock}
 \treturn {
 \t\tworker,
 \t\tclose: async () => {

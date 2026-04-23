@@ -16,10 +16,12 @@ import { gitignoreTemplate } from "../templates/gitignore.js";
 import { indexEntryTemplate } from "../templates/index-entry.js";
 import { packageJsonTemplate } from "../templates/package-json.js";
 import { readmeTemplate } from "../templates/readme.js";
+import { reaperJobTemplate } from "../templates/reaper-job.js";
 import { routesHealthTemplate } from "../templates/routes-health.js";
 import { routesThingsTemplate } from "../templates/routes-things.js";
 import { routesWellKnownTemplate } from "../templates/routes-wellknown.js";
 import { setupScriptTemplate } from "../templates/setup-script.js";
+import { thingClientTemplate } from "../templates/thing-client.js";
 import { tsconfigTemplate } from "../templates/tsconfig.js";
 import { vitestConfigTemplate } from "../templates/vitest-config.js";
 import {
@@ -57,7 +59,12 @@ export const buildScaffoldFileMap = (config: ScaffoldConfig): ScaffoldFileMap =>
 	files["src/routes/wellknown.ts"] = routesWellKnownTemplate(config);
 	files["src/setup/index.ts"] = setupScriptTemplate();
 
-	if (config.storage === "postgres-drizzle") {
+	// Charge intent is stateless — the upstream provider is the source of
+	// truth. Skip drizzle/db/models entirely, emit a typed client stub the
+	// route calls into instead.
+	if (config.intent === "charge") {
+		files["src/services/thing-client.ts"] = thingClientTemplate(config);
+	} else if (config.storage === "postgres-drizzle") {
 		files["src/db/client.ts"] = dbClientTemplate();
 		files["src/db/migrate.ts"] = dbMigrateTemplate();
 		files["src/models/thing.ts"] = thingModelTemplate(config);
@@ -70,6 +77,10 @@ export const buildScaffoldFileMap = (config: ScaffoldConfig): ScaffoldFileMap =>
 		files["src/worker/start.ts"] = workerStartTemplate(config);
 		if (config.intent === "session") {
 			files["src/worker/jobs/session-settle-job.ts"] = sessionSettleJobTemplate();
+		} else {
+			// Charge intent: the only worker job is a reaper for expired
+			// upstream resources. Stub — implementation is provider-specific.
+			files["src/worker/jobs/reaper-job.ts"] = reaperJobTemplate();
 		}
 	}
 

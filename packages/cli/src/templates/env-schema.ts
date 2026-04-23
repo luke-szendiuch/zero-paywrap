@@ -20,7 +20,7 @@ export const envSchemaTemplate = (config: ScaffoldConfig): string => {
 		}n),`,
 		`\tSKU_DURATION_SECONDS: z.coerce.number().default(${config.durationSeconds}),`,
 	];
-	if (config.storage === "postgres-drizzle") {
+	if (config.intent === "session" && config.storage === "postgres-drizzle") {
 		fields.push("\tDATABASE_URL: z.string().url(),");
 	}
 	if (config.queue === "bullmq-redis") {

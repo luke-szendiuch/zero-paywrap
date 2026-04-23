@@ -13,7 +13,10 @@ export const appContextTemplate = (config: ScaffoldConfig): string => {
 		`\tmppxClient: PaywrapMpp["client"];`,
 		`\tmppxAccount: PaywrapMpp["account"];`,
 	];
-	if (config.storage === "postgres-drizzle") {
+	if (config.intent === "charge") {
+		imports.push(`import type { ResourceClient } from "../services/thing-client.js";`);
+		fields.push("\tresourceClient: ResourceClient;");
+	} else if (config.storage === "postgres-drizzle") {
 		imports.push(`import type { Db } from "../db/client.js";`);
 		fields.push("\tdb: Db;");
 	}

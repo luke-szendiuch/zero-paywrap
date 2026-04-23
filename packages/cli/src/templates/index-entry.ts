@@ -5,8 +5,11 @@ import type { ScaffoldConfig } from "../lib/scaffold-config.js";
  * the mount paths but leaves per-resource logic to the route files.
  */
 export const indexEntryTemplate = (config: ScaffoldConfig): string => {
-	const usePg = config.storage === "postgres-drizzle";
+	// Charge intent is stateless — no DB even if the user picked
+	// `postgres-drizzle` at the prompt (they chose it for session habits).
+	const usePg = config.intent === "session" && config.storage === "postgres-drizzle";
 	const useRedis = config.queue === "bullmq-redis";
+	const useResourceClient = config.intent === "charge";
 
 	const imports: string[] = [
 		`import "dotenv/config";`,
@@ -16,6 +19,8 @@ export const indexEntryTemplate = (config: ScaffoldConfig): string => {
 	imports.push(`import { buildApp } from "./app/build-app.js";`);
 	imports.push(`import { parseEnv } from "./core/env.js";`);
 	if (usePg) imports.push(`import { makeDb, makePgPool } from "./db/client.js";`);
+	if (useResourceClient)
+		imports.push(`import { resourceClient } from "./services/thing-client.js";`);
 	imports.push(`import { healthRoutes } from "./routes/health.js";`);
 	imports.push(`import { thingRoutes } from "./routes/things.js";`);
 	imports.push(`import { wellKnownRoutes } from "./routes/wellknown.js";`);
@@ -48,6 +53,7 @@ export const indexEntryTemplate = (config: ScaffoldConfig): string => {
 	setup.push("\t\tstore,");
 	setup.push("\t});");
 	if (useRedis) setup.push("\tconst queues = makeQueues(env.REDIS_URL);");
+	if (useResourceClient) setup.push("\tconst upstreamClient = resourceClient(env);");
 
 	const ctxLines: string[] = [
 		"\t\tenv,",
@@ -58,6 +64,7 @@ export const indexEntryTemplate = (config: ScaffoldConfig): string => {
 		"\t\tmppxAccount: mpp.account,",
 	];
 	if (usePg) ctxLines.push("\t\tdb,");
+	if (useResourceClient) ctxLines.push("\t\tresourceClient: upstreamClient,");
 	if (useRedis) {
 		ctxLines.push("\t\tqueues,");
 		ctxLines.push("\t\tmppxRedis,");

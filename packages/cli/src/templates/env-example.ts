@@ -56,7 +56,7 @@ export const envExampleTemplate = (config: ScaffoldConfig): string => {
 	lines.push(`SKU_DURATION_SECONDS=${config.durationSeconds}`);
 	lines.push("");
 
-	if (config.storage === "postgres-drizzle") {
+	if (config.intent === "session" && config.storage === "postgres-drizzle") {
 		lines.push("# Postgres");
 		lines.push(`DATABASE_URL=postgres://localhost:5432/${config.serviceName.replace(/-/g, "_")}`);
 		lines.push("");
