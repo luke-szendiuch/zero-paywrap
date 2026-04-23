@@ -52,7 +52,7 @@ app.post(
 await app.listen({ port: 3000 });
 ```
 
-> **No Redis required for dev.** paywrap uses an in-memory channel store when `REDIS_URL` is unset. Add Redis before scaling to multiple replicas — see [`@zerorun/paywrap/mpp`'s `redisStore`](../../packages/kit/src/mpp/stores.ts).
+> **No Redis required for dev.** paywrap uses an in-memory channel store when `REDIS_URL` is unset. Add Redis before scaling to multiple replicas — see [`@zerorun/paywrap/mpp`'s `redisStore`](../../packages/kit/src/mpp/stores.ts). On Cloudflare Workers, use [`workersKvStore`](./src/mpp/stores/workers-kv.ts) (charge-safe; non-atomic for high-concurrency session — read the docblock).
 
 > **Wallet bootstrap.** For `session` or `charge` intent, fund the service wallet with ~$0.05 USDC on Tempo so it can submit `tempo.charge` settlement txs. The [`paywrap`](../cli/) CLI provides `paywrap generate-wallet` + `paywrap prefund`. For `proof` intent (zero-amount wallet-auth), no funding is needed.
 
@@ -103,7 +103,7 @@ The kit ships **no root barrel** — import only the subpath you need. This keep
 
 | Subpath | Exports | Reach for it when… |
 |---|---|---|
-| `@zerorun/paywrap/mpp` | `createPaywrapMpp`, `memoryStore`, `redisStore`, `closeSessionOnChain`, `verifyWithScope`, `assertVoucherAdvances`, `TEMPO_ESCROW`, `TEMPO_USDC`, `TEMPO_CHAIN_ID`, `tempoChain` | Bootstrapping mppx, choosing a channel-state store, verifying credentials at route handlers, closing channels on-chain. |
+| `@zerorun/paywrap/mpp` | `createPaywrapMpp`, `memoryStore`, `redisStore`, `workersKvStore`, `closeSessionOnChain`, `verifyWithScope`, `assertVoucherAdvances`, `TEMPO_ESCROW`, `TEMPO_USDC`, `TEMPO_CHAIN_ID`, `tempoChain` | Bootstrapping mppx, choosing a channel-state store (in-memory / Redis / Workers KV), verifying credentials at route handlers, closing channels on-chain. |
 | `@zerorun/paywrap/auth` | `buildSessionChallenge`, `buildChargeChallenge`, `buildProofChallenge`, `payerFromCredential`, `VerifiedCredential`, `VERIFIED` (brand symbol) | Minting 402 challenges from any framework, resolving the authenticated payer address from a verified credential. |
 | `@zerorun/paywrap/signing` | `signVoucher`, `buildVoucherCredential`, `channelIdFromLabel` | Buyer-side code (CLI, agent) producing signed Tempo vouchers. Useful in integration tests too. |
 | `@zerorun/paywrap/testing` | `seedChannel` | Seeding a `ChannelStore` with a fake-open channel in tests. Not for production. |
