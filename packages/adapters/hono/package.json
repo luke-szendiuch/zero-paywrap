@@ -3,6 +3,16 @@
 	"version": "0.0.1",
 	"type": "module",
 	"description": "Hono adapter for @zerorun/paywrap — challenge-reply helpers + middleware for Workers / Node / Bun.",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/zeroclickai/zero-paywrap.git",
+		"directory": "packages/adapters/hono"
+	},
+	"homepage": "https://github.com/zeroclickai/zero-paywrap#readme",
+	"bugs": "https://github.com/zeroclickai/zero-paywrap/issues",
+	"keywords": ["mpp", "hono", "paywrap", "cloudflare-workers", "402", "payments"],
+	"publishConfig": { "access": "public" },
 	"exports": {
 		".": {
 			"types": "./dist/index.d.ts",
@@ -13,7 +23,8 @@
 	"scripts": {
 		"build": "tsc",
 		"typecheck": "tsc --noEmit",
-		"test": "vitest run"
+		"test": "vitest run",
+		"prepublishOnly": "pnpm build"
 	},
 	"dependencies": {
 		"@zerorun/paywrap": "workspace:*"

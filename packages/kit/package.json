@@ -3,6 +3,16 @@
 	"version": "0.0.1",
 	"description": "Primitives for building paid API services on-chain (MPP today, x402 later).",
 	"type": "module",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/zeroclickai/zero-paywrap.git",
+		"directory": "packages/kit"
+	},
+	"homepage": "https://github.com/zeroclickai/zero-paywrap#readme",
+	"bugs": "https://github.com/zeroclickai/zero-paywrap/issues",
+	"keywords": ["mpp", "x402", "tempo", "usdc", "payments", "402", "agents"],
+	"publishConfig": { "access": "public" },
 	"exports": {
 		"./mpp": { "types": "./dist/mpp/index.d.ts", "import": "./dist/mpp/index.js" },
 		"./auth": { "types": "./dist/auth/index.d.ts", "import": "./dist/auth/index.js" },
@@ -17,7 +27,8 @@
 	"scripts": {
 		"build": "tsc",
 		"typecheck": "tsc --noEmit",
-		"test": "vitest run"
+		"test": "vitest run",
+		"prepublishOnly": "pnpm build"
 	},
 	"dependencies": {
 		"mppx": "^0.6.2",

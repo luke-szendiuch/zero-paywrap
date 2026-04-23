@@ -3,13 +3,24 @@
 	"version": "0.0.1",
 	"type": "module",
 	"description": "Interactive scaffolder + day-2 ops CLI for @zerorun/paywrap services.",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/zeroclickai/zero-paywrap.git",
+		"directory": "packages/cli"
+	},
+	"homepage": "https://github.com/zeroclickai/zero-paywrap#readme",
+	"bugs": "https://github.com/zeroclickai/zero-paywrap/issues",
+	"keywords": ["mpp", "paywrap", "cli", "scaffold", "402", "payments"],
+	"publishConfig": { "access": "public" },
 	"bin": { "paywrap": "./dist/cli.js" },
 	"files": ["dist", "README.md"],
 	"scripts": {
 		"build": "tsc",
 		"typecheck": "tsc --noEmit",
 		"test": "vitest run",
-		"dev": "tsx src/cli.ts"
+		"dev": "tsx src/cli.ts",
+		"prepublishOnly": "pnpm build"
 	},
 	"dependencies": {
 		"@clack/prompts": "^0.8.0",
