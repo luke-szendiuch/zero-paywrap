@@ -1,0 +1,38 @@
+{
+	"name": "@zerorun/paywrap",
+	"version": "0.0.1",
+	"description": "Primitives for building paid API services on-chain (MPP today, x402 later).",
+	"type": "module",
+	"exports": {
+		".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" },
+		"./mpp": { "types": "./dist/mpp/index.d.ts", "import": "./dist/mpp/index.js" },
+		"./auth": { "types": "./dist/auth/index.d.ts", "import": "./dist/auth/index.js" },
+		"./signing": { "types": "./dist/signing/index.d.ts", "import": "./dist/signing/index.js" },
+		"./crypto": { "types": "./dist/crypto/index.d.ts", "import": "./dist/crypto/index.js" },
+		"./manifest": { "types": "./dist/manifest/index.d.ts", "import": "./dist/manifest/index.js" },
+		"./health": { "types": "./dist/health/index.d.ts", "import": "./dist/health/index.js" },
+		"./setup": { "types": "./dist/setup/index.d.ts", "import": "./dist/setup/index.js" }
+	},
+	"files": ["dist", "README.md"],
+	"scripts": {
+		"build": "tsc",
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"mppx": "^0.6.2",
+		"viem": "^2.21.55"
+	},
+	"peerDependencies": {
+		"ioredis": "^5.10.1"
+	},
+	"peerDependenciesMeta": {
+		"ioredis": { "optional": true }
+	},
+	"devDependencies": {
+		"@types/node": "^22.10.2",
+		"ioredis": "^5.10.1",
+		"typescript": "^5.7.2",
+		"vitest": "^2.1.8"
+	}
+}
