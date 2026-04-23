@@ -1,5 +1,5 @@
 {
-	"name": "@zerorun/paywrap-fastify",
+	"name": "@zerorun/paywrap-adapter-fastify",
 	"version": "0.0.1",
 	"type": "module",
 	"description": "Fastify adapter for @zerorun/paywrap — challenge-reply helpers + preconfigured app factory.",
