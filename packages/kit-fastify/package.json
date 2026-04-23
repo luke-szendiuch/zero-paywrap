@@ -1,0 +1,33 @@
+{
+	"name": "@zerorun/paywrap-fastify",
+	"version": "0.0.1",
+	"type": "module",
+	"description": "Fastify adapter for @zerorun/paywrap — challenge-reply helpers + preconfigured app factory.",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": ["dist", "README.md"],
+	"scripts": {
+		"build": "tsc",
+		"typecheck": "tsc --noEmit",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"@zerorun/paywrap": "workspace:*",
+		"fastify-type-provider-zod": "^4.0.2",
+		"mppx": "^0.6.2"
+	},
+	"peerDependencies": {
+		"fastify": "^5.0.0"
+	},
+	"devDependencies": {
+		"@types/node": "^22.10.2",
+		"fastify": "^5.2.0",
+		"typescript": "^5.7.2",
+		"viem": "^2.21.55",
+		"vitest": "^2.1.8"
+	}
+}

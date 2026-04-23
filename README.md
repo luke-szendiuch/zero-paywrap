@@ -7,7 +7,7 @@ Toolkit for building paid API services on-chain. v1 covers MPP (channel-based se
 | Package | Purpose |
 |---|---|
 | `@zerorun/paywrap` | Core primitives — payment verification, signing, crypto, stores, manifest + health builders |
-| `@zerorun/paywrap-fastify` | Optional Fastify adapter — preHandler helpers for MPP-gated routes |
+| `@zerorun/paywrap-fastify` | Optional Fastify adapter — 402 challenge-reply helpers, credential extractor, preconfigured app factory |
 | `@zerorun/paywrap-cli` (bin: `paywrap`) | Interactive setup CLI + day-2 ops commands |
 
 ## Scope
