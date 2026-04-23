@@ -212,6 +212,43 @@ describe("mppGated — valid credentials", () => {
 		expect(body.payer.toLowerCase()).toBe(payer.address.toLowerCase());
 	});
 
+	it("factory createHonoApp((c) => ctx) resolves ctx per request and gates correctly", async () => {
+		// Simulate a Workers-style environment: no module-load ctx; factory
+		// reads `c.env.*` at request time. Here we key the mpp off a fake
+		// env binding to prove the factory runs per-request with `c` in
+		// scope.
+		type Env = { SECRET_KEY: string };
+		let factoryCalls = 0;
+		const mpp = createPaywrapMpp({
+			walletPrivateKey: KNOWN_PK,
+			publicBaseUrl: `https://${REALM}`,
+			mppSecretKey: SECRET_KEY,
+			tempoRpcUrl: "https://rpc.example/tempo",
+			store: memoryStore(),
+			channelStateTtl: Number.POSITIVE_INFINITY,
+		});
+		const app = createHonoApp<{
+			mppx: typeof mpp.mppx;
+			mppxChannelStore: typeof mpp.channelStore;
+		}>((c) => {
+			factoryCalls += 1;
+			// Read from env to prove Context is live. Not used functionally
+			// here, just exercises the `c.env` path.
+			const env = c.env as Env | undefined;
+			expect(env?.SECRET_KEY).toBe(SECRET_KEY);
+			return { mppx: mpp.mppx, mppxChannelStore: mpp.channelStore };
+		});
+		app.post("/paid", mppGated({ scope: "paid:1", amount: 50_000n }), (c) => c.json({ ok: true }));
+
+		const res = await app.request("/paid", { method: "POST" }, { SECRET_KEY } satisfies Env);
+		expect(res.status).toBe(402);
+		expect(factoryCalls).toBe(1);
+
+		// Second request → factory runs again.
+		await app.request("/paid", { method: "POST" }, { SECRET_KEY } satisfies Env);
+		expect(factoryCalls).toBe(2);
+	});
+
 	it("preCheck throws → 500, handler not invoked", async () => {
 		const { app, mpp } = makeApp();
 		const verifySpy = vi.spyOn(mpp.mppx, "verifyCredential");
