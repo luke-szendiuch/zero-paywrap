@@ -12,7 +12,7 @@ import {
 	sendChargeChallenge,
 	sendProofChallenge,
 	sendSessionChallenge,
-} from "./index.js";
+} from "./challenges.js";
 
 /**
  * Per-request fields populated by the `mppGated` preHandler after a
