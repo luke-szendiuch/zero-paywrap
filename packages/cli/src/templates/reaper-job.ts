@@ -1,5 +1,5 @@
 export const reaperJobTemplate =
-	(): string => `import type { PaywrapMpp } from "@zerorun/paywrap/mpp";
+	(): string => `import type { PaywrapMpp } from "@zeroclickai/paywrap/mpp";
 import type { Env } from "../../core/env.js";
 
 export type ReaperContext = { env: Env; mpp: PaywrapMpp };

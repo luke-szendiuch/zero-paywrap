@@ -27,8 +27,8 @@ Paywrap supports both modes equally. Neither is "the real way."
 You have a Fastify/Hono/Express API. You want to charge for one or more endpoints. Install two packages, write ~10 lines of middleware:
 
 ```ts
-import { createPaywrapMpp } from '@zerorun/paywrap/mpp';
-import { mppGated, createFastifyApp } from '@zerorun/paywrap-adapter-fastify';
+import { createPaywrapMpp } from '@zeroclickai/paywrap/mpp';
+import { mppGated, createFastifyApp } from '@zeroclickai/paywrap-adapter-fastify';
 
 const mpp = createPaywrapMpp({ /* wallet, secret, baseUrl, rpc */ });
 const app = await createFastifyApp({ mppx: mpp, /* ... */ });
@@ -48,7 +48,7 @@ No Redis required for dev (in-memory store default). No DB. No state. Just auth 
 You want a complete MPP service with the full stack wired up. Run the CLI, answer prompts, get a working repo:
 
 ```bash
-npx @zerorun/paywrap-cli create my-service
+npx @zeroclickai/paywrap-cli create my-service
 # answers: intent (charge/session), price, scope, framework, storage, queue, hosting
 # generates: package.json, Fastify app, mppx setup, optional Drizzle + BullMQ, Dockerfile, tests
 # runs: pnpm install, biome autofix, generates a wallet
@@ -68,14 +68,14 @@ All packages live in `packages/` with pnpm workspace linking.
 
 | Package | Path | Role | Tests | Stability |
 |---|---|---|---|---|
-| `@zerorun/paywrap` | `packages/kit/` | Framework-agnostic primitives: mppx config, verifyWithScope, signing, crypto, manifest, health, setup, stores (memory / redis / workers-kv) | 74 | Core — API surface stabilizing |
-| `@zerorun/paywrap-adapter-fastify` | `packages/adapters/fastify/` | Fastify middleware (`mppGated`), 402 response helpers, preconfigured app factory | 18 | Stable, both reference consumers use it |
-| `@zerorun/paywrap-adapter-hono` | `packages/adapters/hono/` | Same capability as Fastify adapter but for Hono. Runs on Cloudflare Workers. | 22 | Shipped, no production consumer yet |
-| `@zerorun/paywrap-cli` (`bin: paywrap`) | `packages/cli/` | Interactive scaffolder + ops commands (generate-wallet, prefund, register, check) | 17 | Functional, light polish pending |
+| `@zeroclickai/paywrap` | `packages/kit/` | Framework-agnostic primitives: mppx config, verifyWithScope, signing, crypto, manifest, health, setup, stores (memory / redis / workers-kv) | 74 | Core — API surface stabilizing |
+| `@zeroclickai/paywrap-adapter-fastify` | `packages/adapters/fastify/` | Fastify middleware (`mppGated`), 402 response helpers, preconfigured app factory | 18 | Stable, both reference consumers use it |
+| `@zeroclickai/paywrap-adapter-hono` | `packages/adapters/hono/` | Same capability as Fastify adapter but for Hono. Runs on Cloudflare Workers. | 22 | Shipped, no production consumer yet |
+| `@zeroclickai/paywrap-cli` (`bin: paywrap`) | `packages/cli/` | Interactive scaffolder + ops commands (generate-wallet, prefund, register, check) | 17 | Functional, light polish pending |
 
 Not yet shipped:
-- `@zerorun/paywrap-client` — buyer SDK (`createPayingFetch`). Highest-priority roadmap item.
-- `@zerorun/paywrap-adapter-express` — trivial mirror, waiting for real demand.
+- `@zeroclickai/paywrap-client` — buyer SDK (`createPayingFetch`). Highest-priority roadmap item.
+- `@zeroclickai/paywrap-adapter-express` — trivial mirror, waiting for real demand.
 - Durable-Object store for linearizable session-voucher accounting on Workers.
 
 ## Architecture (how the pieces fit)
@@ -84,13 +84,13 @@ Not yet shipped:
 ┌─────────────────────────────────────────────────────────────┐
 │ Seller's service (Fastify / Hono / whatever)                │
 │   └─ adapter.mppGated({...}) preHandler                     │
-│         └─ @zerorun/paywrap-adapter-{fastify,hono}          │
+│         └─ @zeroclickai/paywrap-adapter-{fastify,hono}          │
 │               └─ challenges.ts, gated.ts, app.ts            │
 └───────────┬─────────────────────────────────────────────────┘
             │ uses
             ▼
 ┌─────────────────────────────────────────────────────────────┐
-│ @zerorun/paywrap (the kit)                                   │
+│ @zeroclickai/paywrap (the kit)                                   │
 │                                                              │
 │ /mpp          — createPaywrapMpp, Tempo chain + constants,   │
 │                 stores (memory/redis/workers-kv),            │
@@ -134,7 +134,7 @@ Not yet shipped:
 
 7. **The CLI does one thing.** `paywrap create` scaffolds. `paywrap generate-wallet`, `prefund`, `register`, `check` are ops commands. It is not a framework. It does not dictate how your service evolves.
 
-8. **No barrel files in the kit.** Per project style, consumers import from subpaths (`@zerorun/paywrap/mpp`). There is no `@zerorun/paywrap` root index.
+8. **No barrel files in the kit.** Per project style, consumers import from subpaths (`@zeroclickai/paywrap/mpp`). There is no `@zeroclickai/paywrap` root index.
 
 9. **Lift when duplicated.** If a pure utility lives in an adapter, move it to the kit and re-export. `extractCredential` is in `/auth` now because both adapters need it. Same rule going forward.
 
@@ -146,7 +146,7 @@ Not yet shipped:
 - MPP primitives (and x402 primitives when we add them)
 - Framework adapters (Fastify, Hono; Express on demand)
 - CLI for scaffolding + ops
-- Buyer SDK (`@zerorun/paywrap-client`) — not yet shipped
+- Buyer SDK (`@zeroclickai/paywrap-client`) — not yet shipped
 - Documentation + reference examples
 - Store adapters (memory, Redis, Workers KV; Durable Objects later)
 
@@ -191,14 +191,14 @@ Both services should remain the canonical "what a real consumer looks like" refe
 - **VerifiedCredential** — branded type that can only be produced by `verifyWithScope`. Encodes "this credential passed full verification against expected scope" in the type system.
 - **Tempo** — the L1 we transact on. Chain id 4217. USDC contract at `0x20C0...8b50`. Escrow at `0x33b9...4f25`.
 - **feeToken** — a Tempo-specific chain config field (`feeToken: USDC`) that routes gas payment through USDC balance instead of a native token. Lets a service wallet hold only USDC.
-- **`Payment <b64>` header** — the serialized wire format for a credential. `Credential.serialize` (and by extension `buildVoucherCredential` / `buildChargeCredential` from `@zerorun/paywrap/signing`) returns the FULL Authorization header value including the `Payment ` prefix. Pass the return value verbatim as `authorization: <result>` — do NOT wrap it in another `"Payment "`.
+- **`Payment <b64>` header** — the serialized wire format for a credential. `Credential.serialize` (and by extension `buildVoucherCredential` / `buildChargeCredential` from `@zeroclickai/paywrap/signing`) returns the FULL Authorization header value including the `Payment ` prefix. Pass the return value verbatim as `authorization: <result>` — do NOT wrap it in another `"Payment "`.
 
 ---
 
 ## Roadmap themes (directional, not a todo list)
 
 **Next most likely:**
-- Buyer SDK (`@zerorun/paywrap-client`) with `createPayingFetch` — the last piece before external sellers can expect buyers to consume them cleanly
+- Buyer SDK (`@zeroclickai/paywrap-client`) with `createPayingFetch` — the last piece before external sellers can expect buyers to consume them cleanly
 - Durable-Object store adapter — unblocks session-intent services on Workers at real concurrency
 - x402 primitives in `packages/kit/src/x402/` — parallel to MPP, same shape
 

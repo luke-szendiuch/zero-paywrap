@@ -1,5 +1,5 @@
 export const setupScriptTemplate = (): string => `import "dotenv/config";
-import { generateMppSecretKey, generateWallet } from "@zerorun/paywrap/setup";
+import { generateMppSecretKey, generateWallet } from "@zeroclickai/paywrap/setup";
 
 /**
  * One-shot bootstrap for a fresh deploy. Prints a full \`.env\`-shaped block so

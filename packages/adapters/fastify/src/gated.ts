@@ -3,8 +3,8 @@ import {
 	type VerifiedCredential,
 	claimedPayerFromRawCredential,
 	payerFromCredential,
-} from "@zerorun/paywrap/auth";
-import { type PaywrapMpp, verifyWithScope } from "@zerorun/paywrap/mpp";
+} from "@zeroclickai/paywrap/auth";
+import { type PaywrapMpp, verifyWithScope } from "@zeroclickai/paywrap/mpp";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { formatUnits } from "viem";
 import type { Hex } from "viem";

@@ -1,4 +1,4 @@
-import { generateWallet } from "@zerorun/paywrap/setup";
+import { generateWallet } from "@zeroclickai/paywrap/setup";
 
 /** `paywrap generate-wallet` — pure output, pipe into `.env` or a secret manager. */
 export const runGenerateWallet = (): void => {

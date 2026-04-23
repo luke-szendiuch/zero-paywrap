@@ -22,9 +22,9 @@ export const routesThingsTemplate = (config: ScaffoldConfig): string =>
 
 const sessionRoutes = (config: ScaffoldConfig): string => {
 	const priceMicro = Math.round(Number(config.priceUsdc) * 1_000_000) || 20_000;
-	return `import { extractCredential, sendProofChallenge, sendSessionChallenge } from "@zerorun/paywrap-adapter-fastify";
-import { payerFromCredential } from "@zerorun/paywrap/auth";
-import { verifyWithScope } from "@zerorun/paywrap/mpp";
+	return `import { extractCredential, sendProofChallenge, sendSessionChallenge } from "@zeroclickai/paywrap-adapter-fastify";
+import { payerFromCredential } from "@zeroclickai/paywrap/auth";
+import { verifyWithScope } from "@zeroclickai/paywrap/mpp";
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
 import { formatUnits, type Hex } from "viem";
 import { z } from "zod";
@@ -157,9 +157,9 @@ export const thingRoutes: FastifyPluginAsyncZod = async (app) => {
 const chargeRoutes = (config: ScaffoldConfig): string => {
 	const priceMicro = Math.round(Number(config.priceUsdc) * 1_000_000) || 20_000;
 	return `import { createHash } from "node:crypto";
-import { extractCredential, sendChargeChallenge, sendProofChallenge } from "@zerorun/paywrap-adapter-fastify";
-import { payerFromCredential } from "@zerorun/paywrap/auth";
-import { verifyWithScope } from "@zerorun/paywrap/mpp";
+import { extractCredential, sendChargeChallenge, sendProofChallenge } from "@zeroclickai/paywrap-adapter-fastify";
+import { payerFromCredential } from "@zeroclickai/paywrap/auth";
+import { verifyWithScope } from "@zeroclickai/paywrap/mpp";
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
 import { formatUnits } from "viem";
 import { z } from "zod";

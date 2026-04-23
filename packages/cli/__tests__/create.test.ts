@@ -96,7 +96,7 @@ describe("runCreate (session + postgres + bullmq)", () => {
 		await runCreate(target, { prompter, skipInstall: true });
 		const pkg = JSON.parse(readFileSync(join(target, "package.json"), "utf8"));
 		for (const dep of [
-			"@zerorun/paywrap",
+			"@zeroclickai/paywrap",
 			"mppx",
 			"viem",
 			"zod",

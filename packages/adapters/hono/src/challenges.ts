@@ -3,8 +3,8 @@ import {
 	buildProofChallenge,
 	buildSessionChallenge,
 	extractCredential as kitExtractCredential,
-} from "@zerorun/paywrap/auth";
-import type { PaywrapMpp } from "@zerorun/paywrap/mpp";
+} from "@zeroclickai/paywrap/auth";
+import type { PaywrapMpp } from "@zeroclickai/paywrap/mpp";
 import type { Context } from "hono";
 
 // The kit produces a `{status, headers, body}` descriptor; this module maps

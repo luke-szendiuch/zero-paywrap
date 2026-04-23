@@ -1,8 +1,8 @@
 {
-	"name": "@zerorun/paywrap-adapter-fastify",
+	"name": "@zeroclickai/paywrap-adapter-fastify",
 	"version": "0.0.1",
 	"type": "module",
-	"description": "Fastify adapter for @zerorun/paywrap — challenge-reply helpers + preconfigured app factory.",
+	"description": "Fastify adapter for @zeroclickai/paywrap — challenge-reply helpers + preconfigured app factory.",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
@@ -27,7 +27,7 @@
 		"prepublishOnly": "pnpm build"
 	},
 	"dependencies": {
-		"@zerorun/paywrap": "workspace:*",
+		"@zeroclickai/paywrap": "workspace:*",
 		"fastify-type-provider-zod": "^4.0.2",
 		"mppx": "^0.6.2"
 	},

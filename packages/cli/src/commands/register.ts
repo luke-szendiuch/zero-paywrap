@@ -1,4 +1,4 @@
-import { registerWithZero } from "@zerorun/paywrap/setup";
+import { registerWithZero } from "@zeroclickai/paywrap/setup";
 
 /**
  * `paywrap register` — publish the deployed service to Zero's catalog. Env:

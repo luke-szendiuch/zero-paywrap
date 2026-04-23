@@ -16,7 +16,7 @@ export type Queues = ReturnType<typeof makeQueues>;
 `;
 
 export const workerIndexTemplate = (): string => `import "dotenv/config";
-import { createPaywrapMpp, redisStore } from "@zerorun/paywrap/mpp";
+import { createPaywrapMpp, redisStore } from "@zeroclickai/paywrap/mpp";
 import IORedis from "ioredis";
 import { parseEnv } from "../core/env.js";
 import { startWorkerRuntime } from "./start.js";
@@ -73,7 +73,7 @@ export const workerStartTemplate = (config: ScaffoldConfig): string => {
 		? `import { makeSessionSettleJob } from "./jobs/session-settle-job.js";\n`
 		: `import { reaperJob } from "./jobs/reaper-job.js";\n`;
 
-	return `import type { PaywrapMpp } from "@zerorun/paywrap/mpp";
+	return `import type { PaywrapMpp } from "@zeroclickai/paywrap/mpp";
 import { Worker } from "bullmq";
 import type { Env } from "../core/env.js";
 ${cronImport}import { type ThingJobData, makeConnection } from "./queue.js";
@@ -110,7 +110,7 @@ ${cronBlock}
 };
 
 export const sessionSettleJobTemplate =
-	(): string => `import { type PaywrapMpp, closeSessionOnChain } from "@zerorun/paywrap/mpp";
+	(): string => `import { type PaywrapMpp, closeSessionOnChain } from "@zeroclickai/paywrap/mpp";
 import type { Hex } from "viem";
 
 /**

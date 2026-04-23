@@ -13,7 +13,7 @@ export const routesWellKnownTemplate = (config: ScaffoldConfig): string => {
 \t\t\t\t\tdescription: "Extend an existing ${config.serviceName} session.",
 \t\t\t\t},`
 		: "";
-	return `import { buildPaywrapJson } from "@zerorun/paywrap/manifest";
+	return `import { buildPaywrapJson } from "@zeroclickai/paywrap/manifest";
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
 
 /**

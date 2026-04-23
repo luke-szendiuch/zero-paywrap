@@ -8,7 +8,7 @@ export const readmeTemplate = (config: ScaffoldConfig): string => {
 	stepBodies.push("Copy `.env.example` to `.env` and fill in required values.");
 	if (!config.wallet) {
 		stepBodies.push(
-			"Generate a wallet: `npx @zerorun/paywrap-cli generate-wallet`. Paste into `.env`.",
+			"Generate a wallet: `npx @zeroclickai/paywrap-cli generate-wallet`. Paste into `.env`.",
 		);
 	} else {
 		stepBodies.push(
@@ -17,7 +17,7 @@ export const readmeTemplate = (config: ScaffoldConfig): string => {
 	}
 	if (config.intent === "session") {
 		stepBodies.push(
-			"Prefund the wallet with ~0.05 USDC on Tempo: `npx @zerorun/paywrap-cli prefund <address>`. Session intent needs this because the seller pays gas on channel close.",
+			"Prefund the wallet with ~0.05 USDC on Tempo: `npx @zeroclickai/paywrap-cli prefund <address>`. Session intent needs this because the seller pays gas on channel close.",
 		);
 	}
 	if (config.storage === "postgres-drizzle") {
@@ -25,7 +25,7 @@ export const readmeTemplate = (config: ScaffoldConfig): string => {
 	}
 	stepBodies.push("Start: `pnpm dev`.");
 	stepBodies.push(
-		"Publish to Zero once public: `npx @zerorun/paywrap-cli register` (needs `ZERO_API_URL`, `PUBLIC_BASE_URL`, `WALLET_PRIVATE_KEY`).",
+		"Publish to Zero once public: `npx @zeroclickai/paywrap-cli register` (needs `ZERO_API_URL`, `PUBLIC_BASE_URL`, `WALLET_PRIVATE_KEY`).",
 	);
 	const steps = stepBodies.map((body, i) => `${i + 1}. ${body}`);
 
@@ -41,7 +41,7 @@ zero fetch ${exampleMethod} "$PUBLIC_BASE_URL/v1/things"`;
 
 	return `# ${config.serviceName}
 
-Paid API service scaffolded with \`@zerorun/paywrap-cli\`.
+Paid API service scaffolded with \`@zeroclickai/paywrap-cli\`.
 
 - **Intent:** \`${config.intent}\`${config.intent === "session" ? " (one channel = many paid requests)" : " (one-shot payment)"}
 - **Price:** ${priceUsdc} USDC per charge
@@ -68,15 +68,15 @@ ${config.intent === "charge" ? "- `src/services/thing-client.ts` — typed clien
 ## Ops commands
 
 \`\`\`sh
-npx @zerorun/paywrap-cli check $PUBLIC_BASE_URL    # health + well-known
-npx @zerorun/paywrap-cli register                  # publish to Zero catalog
+npx @zeroclickai/paywrap-cli check $PUBLIC_BASE_URL    # health + well-known
+npx @zeroclickai/paywrap-cli register                  # publish to Zero catalog
 \`\`\`
 
 ## Where the kit ends and your service begins
 
 The scaffold stops at the \`// TODO: implement\` markers. Business logic — your
 actual resource, persistence, upstream API calls — lives in your service repo
-and is never dragged into \`@zerorun/paywrap\`.
+and is never dragged into \`@zeroclickai/paywrap\`.
 ${
 	config.intent === "charge"
 		? `\nThis scaffold is **stateless** — your upstream provider (Netlify, R2,

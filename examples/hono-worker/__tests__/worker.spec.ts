@@ -13,9 +13,9 @@
  * Workers KV interaction) runs for real.
  */
 
-import type { MinimalKVNamespace } from "@zerorun/paywrap/mpp";
-import { buildChargeCredential } from "@zerorun/paywrap/signing";
-import { stubVerifyCredential } from "@zerorun/paywrap/testing";
+import type { MinimalKVNamespace } from "@zeroclickai/paywrap/mpp";
+import { buildChargeCredential } from "@zeroclickai/paywrap/signing";
+import { stubVerifyCredential } from "@zeroclickai/paywrap/testing";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { afterEach, describe, expect, it } from "vitest";
 import { type Env, buildApp, mppFromEnv } from "../src/worker.js";

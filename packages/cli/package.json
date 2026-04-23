@@ -1,8 +1,8 @@
 {
-	"name": "@zerorun/paywrap-cli",
+	"name": "@zeroclickai/paywrap-cli",
 	"version": "0.0.1",
 	"type": "module",
-	"description": "Interactive scaffolder + day-2 ops CLI for @zerorun/paywrap services.",
+	"description": "Interactive scaffolder + day-2 ops CLI for @zeroclickai/paywrap services.",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
@@ -24,7 +24,7 @@
 	},
 	"dependencies": {
 		"@clack/prompts": "^0.8.0",
-		"@zerorun/paywrap": "workspace:*",
+		"@zeroclickai/paywrap": "workspace:*",
 		"commander": "^12.1.0",
 		"dotenv": "^16.4.0",
 		"execa": "^9.5.0"

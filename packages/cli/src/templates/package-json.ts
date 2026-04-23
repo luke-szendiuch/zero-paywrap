@@ -8,7 +8,7 @@ import type { ScaffoldConfig } from "../lib/scaffold-config.js";
  */
 export const packageJsonTemplate = (config: ScaffoldConfig): string => {
 	const deps: Record<string, string> = {
-		"@zerorun/paywrap": "^0.0.1",
+		"@zeroclickai/paywrap": "^0.0.1",
 		mppx: "^0.6.2",
 		viem: "^2.21.55",
 		zod: "^3.24.1",
@@ -16,7 +16,7 @@ export const packageJsonTemplate = (config: ScaffoldConfig): string => {
 	if (config.framework === "fastify") {
 		deps.fastify = "^5.2.0";
 		deps["fastify-type-provider-zod"] = "^4.0.2";
-		deps["@zerorun/paywrap-adapter-fastify"] = "^0.0.1";
+		deps["@zeroclickai/paywrap-adapter-fastify"] = "^0.0.1";
 	}
 	// Charge intent is stateless — no DB. Only wire drizzle/pg for session.
 	if (config.intent === "session" && config.storage === "postgres-drizzle") {

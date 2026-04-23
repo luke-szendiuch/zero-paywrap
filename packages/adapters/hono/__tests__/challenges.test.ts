@@ -1,8 +1,8 @@
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createPaywrapMpp, memoryStore } from "@zerorun/paywrap/mpp";
-import { TEMPO_CHAIN_ID, TEMPO_ESCROW } from "@zerorun/paywrap/mpp";
-import { buildVoucherCredential, channelIdFromLabel } from "@zerorun/paywrap/signing";
+import { createPaywrapMpp, memoryStore } from "@zeroclickai/paywrap/mpp";
+import { TEMPO_CHAIN_ID, TEMPO_ESCROW } from "@zeroclickai/paywrap/mpp";
+import { buildVoucherCredential, channelIdFromLabel } from "@zeroclickai/paywrap/signing";
 import * as esbuild from "esbuild";
 import { Hono } from "hono";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
@@ -137,7 +137,7 @@ describe("Cloudflare Workers compatibility", () => {
 			format: "esm",
 			platform: "neutral",
 			conditions: ["worker", "browser", "module", "import"],
-			external: ["hono", "@zerorun/paywrap/*", "mppx", "viem", "viem/*"],
+			external: ["hono", "@zeroclickai/paywrap/*", "mppx", "viem", "viem/*"],
 			logLevel: "silent",
 		});
 		expect(result.errors).toEqual([]);

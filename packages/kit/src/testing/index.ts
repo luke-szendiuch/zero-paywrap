@@ -49,7 +49,7 @@ export type StubVerifyHandle = {
 /**
  * Replace `mppx.verifyCredential` with a stub that parses the credential +
  * enforces `scope` but SKIPS on-chain settlement. !!! TESTING ONLY — turns a
- * paid charge into free. Exported under `@zerorun/paywrap/testing` to make
+ * paid charge into free. Exported under `@zeroclickai/paywrap/testing` to make
  * the boundary obvious; the Workers export map excludes this subpath.
  *
  * Always call `restore()` in an `afterEach`/`finally` — a leftover stub

@@ -1,8 +1,8 @@
-import type { VerifiedCredential } from "@zerorun/paywrap/auth";
-import { createPaywrapMpp, memoryStore } from "@zerorun/paywrap/mpp";
-import { TEMPO_CHAIN_ID, TEMPO_ESCROW } from "@zerorun/paywrap/mpp";
-import { buildVoucherCredential, channelIdFromLabel } from "@zerorun/paywrap/signing";
-import { seedChannel } from "@zerorun/paywrap/testing";
+import type { VerifiedCredential } from "@zeroclickai/paywrap/auth";
+import { createPaywrapMpp, memoryStore } from "@zeroclickai/paywrap/mpp";
+import { TEMPO_CHAIN_ID, TEMPO_ESCROW } from "@zeroclickai/paywrap/mpp";
+import { buildVoucherCredential, channelIdFromLabel } from "@zeroclickai/paywrap/signing";
+import { seedChannel } from "@zeroclickai/paywrap/testing";
 import type { Hex } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it, vi } from "vitest";

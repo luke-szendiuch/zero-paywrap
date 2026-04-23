@@ -26,10 +26,10 @@ importers:
 
   examples/hono-worker:
     dependencies:
-      '@zerorun/paywrap':
+      '@zeroclickai/paywrap':
         specifier: workspace:*
         version: link:../../packages/kit
-      '@zerorun/paywrap-adapter-hono':
+      '@zeroclickai/paywrap-adapter-hono':
         specifier: workspace:*
         version: link:../../packages/adapters/hono
       hono:
@@ -57,7 +57,7 @@ importers:
 
   packages/adapters/fastify:
     dependencies:
-      '@zerorun/paywrap':
+      '@zeroclickai/paywrap':
         specifier: workspace:*
         version: link:../../kit
       fastify-type-provider-zod:
@@ -85,7 +85,7 @@ importers:
 
   packages/adapters/hono:
     dependencies:
-      '@zerorun/paywrap':
+      '@zeroclickai/paywrap':
         specifier: workspace:*
         version: link:../../kit
     devDependencies:
@@ -113,7 +113,7 @@ importers:
       '@clack/prompts':
         specifier: ^0.8.0
         version: 0.8.2
-      '@zerorun/paywrap':
+      '@zeroclickai/paywrap':
         specifier: workspace:*
         version: link:../kit
       commander:

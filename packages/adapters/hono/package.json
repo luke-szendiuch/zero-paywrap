@@ -1,8 +1,8 @@
 {
-	"name": "@zerorun/paywrap-adapter-hono",
+	"name": "@zeroclickai/paywrap-adapter-hono",
 	"version": "0.0.1",
 	"type": "module",
-	"description": "Hono adapter for @zerorun/paywrap — challenge-reply helpers + middleware for Workers / Node / Bun.",
+	"description": "Hono adapter for @zeroclickai/paywrap — challenge-reply helpers + middleware for Workers / Node / Bun.",
 	"license": "MIT",
 	"repository": {
 		"type": "git",
@@ -27,7 +27,7 @@
 		"prepublishOnly": "pnpm build"
 	},
 	"dependencies": {
-		"@zerorun/paywrap": "workspace:*"
+		"@zeroclickai/paywrap": "workspace:*"
 	},
 	"peerDependencies": {
 		"hono": "^4.0.0"

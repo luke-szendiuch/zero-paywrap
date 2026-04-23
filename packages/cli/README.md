@@ -1,12 +1,12 @@
-# @zerorun/paywrap-cli
+# @zeroclickai/paywrap-cli
 
-Interactive scaffolder + day-2 ops commands for [`@zerorun/paywrap`](https://github.com/zeroclickai/zero-paywrap) services.
+Interactive scaffolder + day-2 ops commands for [`@zeroclickai/paywrap`](https://github.com/zeroclickai/zero-paywrap) services.
 
 ## Install
 
 ```bash
-pnpm add -g @zerorun/paywrap-cli
-# or one-off: npx @zerorun/paywrap-cli ...
+pnpm add -g @zeroclickai/paywrap-cli
+# or one-off: npx @zeroclickai/paywrap-cli ...
 ```
 
 Binary: `paywrap`.

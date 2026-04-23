@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { basename, resolve } from "node:path";
-import { generateMppSecretKey, generateWallet, prefundWallet } from "@zerorun/paywrap/setup";
+import { generateMppSecretKey, generateWallet, prefundWallet } from "@zeroclickai/paywrap/setup";
 import { type Prompter, makeClackPrompter } from "../lib/prompter.js";
 import type {
 	HostingHint,

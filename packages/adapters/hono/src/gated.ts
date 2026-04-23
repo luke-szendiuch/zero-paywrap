@@ -4,8 +4,8 @@ import {
 	claimedPayerFromRawCredential,
 	extractCredential,
 	payerFromCredential,
-} from "@zerorun/paywrap/auth";
-import { type PaywrapMpp, verifyWithScope } from "@zerorun/paywrap/mpp";
+} from "@zeroclickai/paywrap/auth";
+import { type PaywrapMpp, verifyWithScope } from "@zeroclickai/paywrap/mpp";
 import type { Context, MiddlewareHandler } from "hono";
 import { formatUnits } from "viem";
 import type { Hex } from "viem";

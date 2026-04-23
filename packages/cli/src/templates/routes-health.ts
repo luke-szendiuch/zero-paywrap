@@ -22,7 +22,7 @@ export const routesHealthTemplate = (config: ScaffoldConfig): string => {
 		probes.push(`\t\t\t\tself: () => "up" as const,`);
 	}
 
-	return `import { aggregateHealthProbes } from "@zerorun/paywrap/health";
+	return `import { aggregateHealthProbes } from "@zeroclickai/paywrap/health";
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
 
 /**

@@ -1,4 +1,4 @@
-import type { PaywrapMpp } from "@zerorun/paywrap/mpp";
+import type { PaywrapMpp } from "@zeroclickai/paywrap/mpp";
 import { type Context, Hono } from "hono";
 import type { PaywrapVariables } from "./gated.js";
 

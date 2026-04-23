@@ -3,8 +3,8 @@ import {
 	buildProofChallenge,
 	buildSessionChallenge,
 	extractCredential as kitExtractCredential,
-} from "@zerorun/paywrap/auth";
-import type { PaywrapMpp } from "@zerorun/paywrap/mpp";
+} from "@zeroclickai/paywrap/auth";
+import type { PaywrapMpp } from "@zeroclickai/paywrap/mpp";
 
 // The kit produces a `{status, headers, body}` descriptor from every challenge
 // builder; this module maps that onto fastify's reply API. No business rules

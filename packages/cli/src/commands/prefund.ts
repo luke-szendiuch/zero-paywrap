@@ -1,4 +1,4 @@
-import { prefundWallet } from "@zerorun/paywrap/setup";
+import { prefundWallet } from "@zeroclickai/paywrap/setup";
 
 export type PrefundOptions = {
 	amountMicro?: bigint;

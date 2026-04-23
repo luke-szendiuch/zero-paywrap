@@ -2,7 +2,7 @@ import type { ScaffoldConfig } from "../lib/scaffold-config.js";
 
 export const appContextTemplate = (config: ScaffoldConfig): string => {
 	const imports: string[] = [
-		`import type { PaywrapMpp } from "@zerorun/paywrap/mpp";`,
+		`import type { PaywrapMpp } from "@zeroclickai/paywrap/mpp";`,
 		`import type { Env } from "../core/env.js";`,
 	];
 	const fields: string[] = [

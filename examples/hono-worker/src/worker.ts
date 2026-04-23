@@ -1,6 +1,10 @@
-import { createHonoApp, mppGated } from "@zerorun/paywrap-adapter-hono";
-import { buildPaywrapJson } from "@zerorun/paywrap/manifest";
-import { type MinimalKVNamespace, createPaywrapMpp, workersKvStore } from "@zerorun/paywrap/mpp";
+import { createHonoApp, mppGated } from "@zeroclickai/paywrap-adapter-hono";
+import { buildPaywrapJson } from "@zeroclickai/paywrap/manifest";
+import {
+	type MinimalKVNamespace,
+	createPaywrapMpp,
+	workersKvStore,
+} from "@zeroclickai/paywrap/mpp";
 import type { Address } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { randomJoke } from "./jokes.js";

@@ -1,5 +1,5 @@
 {
-	"name": "@zerorun/paywrap",
+	"name": "@zeroclickai/paywrap",
 	"version": "0.0.1",
 	"description": "Primitives for building paid API services on-chain (MPP today, x402 later).",
 	"type": "module",

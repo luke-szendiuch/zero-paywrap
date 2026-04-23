@@ -14,7 +14,7 @@ const program = new Command();
 
 program
 	.name("paywrap")
-	.description("Scaffold + operate @zerorun/paywrap services")
+	.description("Scaffold + operate @zeroclickai/paywrap services")
 	.version("0.0.1");
 
 program

@@ -13,7 +13,7 @@ export const indexEntryTemplate = (config: ScaffoldConfig): string => {
 
 	const imports: string[] = [
 		`import "dotenv/config";`,
-		`import { createPaywrapMpp, memoryStore${useRedis ? ", redisStore" : ""} } from "@zerorun/paywrap/mpp";`,
+		`import { createPaywrapMpp, memoryStore${useRedis ? ", redisStore" : ""} } from "@zeroclickai/paywrap/mpp";`,
 	];
 	if (useRedis) imports.push(`import IORedis from "ioredis";`);
 	imports.push(`import { buildApp } from "./app/build-app.js";`);

@@ -1,7 +1,7 @@
-import { createPaywrapMpp } from "@zerorun/paywrap/mpp";
-import { memoryStore } from "@zerorun/paywrap/mpp";
-import { TEMPO_CHAIN_ID, TEMPO_ESCROW } from "@zerorun/paywrap/mpp";
-import { buildVoucherCredential, channelIdFromLabel } from "@zerorun/paywrap/signing";
+import { createPaywrapMpp } from "@zeroclickai/paywrap/mpp";
+import { memoryStore } from "@zeroclickai/paywrap/mpp";
+import { TEMPO_CHAIN_ID, TEMPO_ESCROW } from "@zeroclickai/paywrap/mpp";
+import { buildVoucherCredential, channelIdFromLabel } from "@zeroclickai/paywrap/signing";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import {

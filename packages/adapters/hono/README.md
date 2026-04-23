@@ -1,6 +1,6 @@
-# @zerorun/paywrap-adapter-hono
+# @zeroclickai/paywrap-adapter-hono
 
-Hono adapter for [`@zerorun/paywrap`](../../kit/). Runs on Cloudflare Workers, Node, Bun, and anywhere else Hono runs.
+Hono adapter for [`@zeroclickai/paywrap`](../../kit/). Runs on Cloudflare Workers, Node, Bun, and anywhere else Hono runs.
 
 ## Quickstart (Cloudflare Workers)
 
@@ -11,8 +11,8 @@ Two equivalent ways to wire up the paywrap app context. Use whichever matches yo
 Worker env bindings (KV, secrets) are only available per request, so the ctx can't be built at module load. Pass a factory to `createHonoApp`:
 
 ```ts
-import { createHonoApp, mppGated } from "@zerorun/paywrap-adapter-hono";
-import { createPaywrapMpp, workersKvStore } from "@zerorun/paywrap/mpp";
+import { createHonoApp, mppGated } from "@zeroclickai/paywrap-adapter-hono";
+import { createPaywrapMpp, workersKvStore } from "@zeroclickai/paywrap/mpp";
 
 type Env = { PAYWRAP_KV: KVNamespace; WALLET_PRIVATE_KEY: string; MPP_SECRET_KEY: string };
 
@@ -37,8 +37,8 @@ export default app;
 ### Node-style (ctx known at module load)
 
 ```ts
-import { createHonoApp, mppGated } from "@zerorun/paywrap-adapter-hono";
-import { createPaywrapMpp } from "@zerorun/paywrap/mpp";
+import { createHonoApp, mppGated } from "@zeroclickai/paywrap-adapter-hono";
+import { createPaywrapMpp } from "@zeroclickai/paywrap/mpp";
 
 const mpp = createPaywrapMpp({
   walletPrivateKey: process.env.WALLET_PRIVATE_KEY as `0x${string}`,
@@ -89,4 +89,4 @@ nodejs_compat = true  # required for node:util (transitive via mppx)
 
 ## Non-Workers runtimes
 
-The adapter is runtime-agnostic. On Node or Bun, use `redisStore(new IORedis(...))` from `@zerorun/paywrap/mpp` for durable, linearizable state. `workersKvStore` is Workers-specific.
+The adapter is runtime-agnostic. On Node or Bun, use `redisStore(new IORedis(...))` from `@zeroclickai/paywrap/mpp` for durable, linearizable state. `workersKvStore` is Workers-specific.

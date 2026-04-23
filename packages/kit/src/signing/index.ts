@@ -145,7 +145,7 @@ export type BuildChargeCredentialParams = {
  *   - `amountMicro > 0n` → proof-shaped credential; server-side charge
  *     verify REQUIRES an on-chain `hash`/`transaction` credential for
  *     non-zero amounts, so this path fails against a real chain. Pair with
- *     `stubVerifyCredential` from `@zerorun/paywrap/testing` in tests.
+ *     `stubVerifyCredential` from `@zeroclickai/paywrap/testing` in tests.
  */
 export const buildChargeCredential = async (
 	params: BuildChargeCredentialParams,
