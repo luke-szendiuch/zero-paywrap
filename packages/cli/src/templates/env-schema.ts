@@ -41,7 +41,12 @@ export type Env = z.infer<typeof EnvSchema>;
 export const parseEnv = (raw: NodeJS.ProcessEnv | Record<string, unknown>): Env => {
 \tconst parsed = EnvSchema.safeParse(raw);
 \tif (!parsed.success) {
-\t\tthrow new Error(\`invalid env: \${parsed.error.message}\`);
+\t\tconst issues = parsed.error.issues
+\t\t\t.map((i) => \`  - \${i.path.join(".") || "(root)"}: \${i.message}\`)
+\t\t\t.join("\\n");
+\t\tthrow new Error(
+\t\t\t\`Invalid env:\\n\${issues}\\n\\nSee .env.example — generate missing keys with \\\`pnpm setup generate-wallet\\\` or \\\`pnpm setup generate-secrets\\\`.\`,
+\t\t);
 \t}
 \treturn parsed.data;
 };
