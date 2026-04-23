@@ -5,9 +5,9 @@ export type PrefundOptions = {
 };
 
 /**
- * `paywrap prefund <address>` — send USDC on Tempo from the caller's
- * `WALLET_PRIVATE_KEY` to `address`. Reads TEMPO_RPC_URL from env. Default
- * amount is 50_000 micro-USDC (0.05 USDC), same as the kit default.
+ * `paywrap prefund <address>` — send USDC on Tempo from `WALLET_PRIVATE_KEY`
+ * to `address`. Env: `WALLET_PRIVATE_KEY`, `TEMPO_RPC_URL`. Default amount
+ * is 50_000 micro-USDC (0.05 USDC), same as the kit default.
  */
 export const runPrefund = async (address: string, opts: PrefundOptions): Promise<void> => {
 	const fromKey = process.env.WALLET_PRIVATE_KEY;

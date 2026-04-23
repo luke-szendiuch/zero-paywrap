@@ -1,10 +1,6 @@
 import * as clack from "@clack/prompts";
 
-/**
- * Tiny abstraction over @clack/prompts so tests can inject canned answers
- * without spinning up a TTY. The real implementation delegates; the test
- * implementation returns the values stored on a map keyed by prompt name.
- */
+/** Abstraction over @clack/prompts so tests can inject canned answers. */
 export type Prompter = {
 	text: (opts: { name: string; message: string; defaultValue?: string }) => Promise<string>;
 	select: <T extends string>(opts: {
@@ -55,9 +51,8 @@ export const makeClackPrompter = (): Prompter => ({
 });
 
 /**
- * Build a prompter from a precomputed answer map. Used by tests and the
- * `--yes` / `--non-interactive-defaults` flag (which fills the map with
- * defaults rather than asking anything).
+ * Prompter that reads answers from a map. Used by tests + the `--yes` flag
+ * (which fills the map with defaults instead of asking).
  */
 export const makeStubPrompter = (answers: Record<string, unknown>): Prompter => ({
 	text: async ({ name, defaultValue }) => {

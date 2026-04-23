@@ -8,12 +8,8 @@ import { runGenerateWallet } from "./commands/generate-wallet.js";
 import { runPrefund } from "./commands/prefund.js";
 import { runRegister } from "./commands/register.js";
 
-/**
- * CLI entrypoint. Each subcommand delegates to a `run*` function in
- * `./commands/` — keep this file dumb so tests can exercise the commands
- * without spawning a child process (except the one test that asserts the
- * binary itself works).
- */
+// Each subcommand delegates to a `run*` function in `./commands/`. Keep this
+// file dumb so tests can exercise commands without spawning a child process.
 const program = new Command();
 
 program
@@ -38,17 +34,16 @@ program
 				...(opts.skipInstall ? { skipInstall: true } : {}),
 				runPnpmInstall: async (cwd) => {
 					await execa("pnpm", ["install"], { cwd, stdio: "inherit" });
-					// Biome inlines short arrays and reflows calls that exceed line width
-					// — templates can't easily anticipate every reflow, so let the
-					// installed biome format the scaffold after deps are ready. Cheap
-					// and makes the first `pnpm lint` in the scaffold a clean pass.
+					// Templates can't anticipate every biome reflow, so format the
+					// scaffold after deps are installed — cheap, and makes the
+					// scaffold's first `pnpm lint` a clean pass.
 					try {
 						await execa("pnpm", ["exec", "biome", "check", "--write", "--unsafe", "."], {
 							cwd,
 							stdio: "ignore",
 						});
 					} catch {
-						// biome exits non-zero on unfixable issues; not fatal for scaffold.
+						// biome exits non-zero on unfixable issues; not fatal.
 					}
 				},
 				runGitInit: async (cwd) => {

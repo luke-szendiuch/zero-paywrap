@@ -32,11 +32,7 @@ import {
 } from "../templates/worker.js";
 import type { ScaffoldConfig } from "./scaffold-config.js";
 
-/**
- * Resolved on-disk layout — the record of every file the scaffold produces.
- * Built in-memory first so tests can snapshot it without hitting the
- * filesystem.
- */
+/** On-disk layout built in-memory first so tests can snapshot it. */
 export type ScaffoldFileMap = Record<string, string>;
 
 export const buildScaffoldFileMap = (config: ScaffoldConfig): ScaffoldFileMap => {
@@ -59,9 +55,8 @@ export const buildScaffoldFileMap = (config: ScaffoldConfig): ScaffoldFileMap =>
 	files["src/routes/wellknown.ts"] = routesWellKnownTemplate(config);
 	files["src/setup/index.ts"] = setupScriptTemplate();
 
-	// Charge intent is stateless — the upstream provider is the source of
-	// truth. Skip drizzle/db/models entirely, emit a typed client stub the
-	// route calls into instead.
+	// Charge intent is stateless — upstream provider is source of truth.
+	// Skip drizzle/db/models; emit a typed client stub instead.
 	if (config.intent === "charge") {
 		files["src/services/thing-client.ts"] = thingClientTemplate(config);
 	} else if (config.storage === "postgres-drizzle") {
@@ -78,13 +73,12 @@ export const buildScaffoldFileMap = (config: ScaffoldConfig): ScaffoldFileMap =>
 		if (config.intent === "session") {
 			files["src/worker/jobs/session-settle-job.ts"] = sessionSettleJobTemplate();
 		} else {
-			// Charge intent: the only worker job is a reaper for expired
-			// upstream resources. Stub — implementation is provider-specific.
+			// Charge intent: only worker job is a provider-specific reaper stub.
 			files["src/worker/jobs/reaper-job.ts"] = reaperJobTemplate();
 		}
 	}
 
-	// .env pre-seeded with the generated wallet so the user can run immediately.
+	// Pre-seed .env with the generated wallet so the user can run immediately.
 	if (config.wallet) {
 		const envLines = [
 			`WALLET_PRIVATE_KEY=${config.wallet.privateKey}`,
@@ -97,9 +91,8 @@ export const buildScaffoldFileMap = (config: ScaffoldConfig): ScaffoldFileMap =>
 };
 
 /**
- * Write every file in `map` under `targetDir`. Safe across parent-dir depth —
- * creates intermediate directories. Does NOT wipe existing content in the
- * target; caller is expected to have chosen an empty dir.
+ * Write every file in `map` under `targetDir`. Creates intermediate dirs.
+ * Does NOT wipe existing content — caller is expected to have chosen empty.
  */
 export const writeScaffoldFiles = async (
 	targetDir: string,

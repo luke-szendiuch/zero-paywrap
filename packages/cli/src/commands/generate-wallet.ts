@@ -1,9 +1,6 @@
 import { generateWallet } from "@zerorun/paywrap/setup";
 
-/**
- * `paywrap generate-wallet` — pure output, no side effects. Users typically
- * pipe this into their `.env` or secret manager.
- */
+/** `paywrap generate-wallet` — pure output, pipe into `.env` or a secret manager. */
 export const runGenerateWallet = (): void => {
 	const wallet = generateWallet();
 	process.stdout.write(

@@ -12,7 +12,7 @@ import type {
 } from "../lib/scaffold-config.js";
 import { buildScaffoldFileMap, writeScaffoldFiles } from "../lib/write-scaffold.js";
 
-/** Default fill-ins used by `--yes` and anywhere a prompt is skipped. */
+/** Default fill-ins used by `--yes` and any skipped prompt. */
 const DEFAULTS = {
 	intent: "session" as PaymentIntent,
 	priceUsdc: "0.02",
@@ -25,20 +25,18 @@ const DEFAULTS = {
 };
 
 export type CreateOptions = {
-	/** Skip all prompts and use defaults. */
 	yes?: boolean;
 	/** Override the default prompter for testing. */
 	prompter?: Prompter;
-	/** Skip `pnpm install` + git init after scaffolding. */
 	skipInstall?: boolean;
-	/** Runner for external processes — tests stub this out. */
+	/** External-process runners — tests stub these out. */
 	runPnpmInstall?: (cwd: string) => Promise<void>;
 	runGitInit?: (cwd: string) => Promise<void>;
 };
 
 /**
- * `paywrap create [dir]` — interactive scaffolder. Writes a complete paid-API
- * service into `dir`, optionally generates a wallet, optionally prefunds it,
+ * `paywrap create [dir]` — interactive scaffolder. Writes a complete
+ * paid-API service into `dir`, optionally generates + prefunds a wallet,
  * optionally installs + commits.
  */
 export const runCreate = async (
@@ -206,9 +204,8 @@ export const runCreate = async (
 	};
 
 	if (existsSync(targetDir)) {
-		// Intentionally permissive — Write overwrites files, caller should have
-		// chosen an empty dir. We only guard against the clearly-wrong case of
-		// running inside the CLI's own source dir.
+		// Write overwrites files; caller should've chosen an empty dir. Only
+		// guard against the clearly-wrong case of writing into our own source.
 		const abs = resolve(targetDir);
 		if (abs.endsWith("packages/cli") || abs.endsWith("packages/kit")) {
 			throw new Error(`refusing to scaffold into workspace package dir: ${abs}`);
@@ -217,8 +214,8 @@ export const runCreate = async (
 
 	const files = buildScaffoldFileMap(config);
 
-	// Append the MPP secret to the generated .env too, so the scaffold runs
-	// out of the box without needing another CLI call.
+	// Append the MPP secret to the generated .env so the scaffold runs out
+	// of the box without another CLI call.
 	if (wallet) {
 		const existing = files[".env"] ?? "";
 		const mppKey = generateMppSecretKey();

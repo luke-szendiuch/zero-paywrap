@@ -2,8 +2,8 @@ import { registerWithZero } from "@zerorun/paywrap/setup";
 
 /**
  * `paywrap register` — publish the deployed service to Zero's catalog. Env:
- * `ZERO_API_URL`, `PUBLIC_BASE_URL`, `WALLET_PRIVATE_KEY` (the last is only
- * read to prove it's set; the register payload uses the public URL).
+ * `ZERO_API_URL`, `PUBLIC_BASE_URL`, `WALLET_PRIVATE_KEY` (the last is
+ * only read to prove it's set).
  */
 export const runRegister = async (): Promise<void> => {
 	const zeroApiUrl = process.env.ZERO_API_URL;

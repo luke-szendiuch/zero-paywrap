@@ -1,7 +1,6 @@
 /**
  * `paywrap check <url>` — hit `<url>/healthz` and `<url>/.well-known/paywrap.json`
- * and pretty-print each response. Non-fatal — we try both probes even if the
- * first fails.
+ * and pretty-print each response. Non-fatal; we try both even if the first fails.
  */
 export const runCheck = async (baseUrl: string): Promise<void> => {
 	const base = baseUrl.replace(/\/$/, "");
