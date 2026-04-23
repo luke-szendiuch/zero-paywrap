@@ -11,6 +11,7 @@ import {
 	validatorCompiler,
 } from "fastify-type-provider-zod";
 import { Credential } from "mppx";
+import { registerMppGated } from "./gated.js";
 
 /**
  * Fastify adapter for `@zerorun/paywrap`. The kit returns a
@@ -160,5 +161,30 @@ export const createFastifyApp = <T extends AppContextBase>(ctx: T): FastifyInsta
 	// plain-value overload. Consumers augment the FastifyInstance shape in
 	// their own files (see README) to expose a typed `app.ctx`.
 	app.decorate("ctx", ctx as unknown);
+	// Register the `app.mppGated(...)` preHandler factory. Kept optional at
+	// the ctx level — consumers whose ctx doesn't carry mppx will simply
+	// never call it. The factory throws clearly at registration time if
+	// required options are missing.
+	registerMppGated(app);
 	return app;
+};
+
+export { registerMppGated };
+export type {
+	MppGatedOptions,
+	MppGatedPreHandler,
+	MppIntent,
+} from "./gated.js";
+
+/**
+ * Alias export so consumers who prefer explicit imports can do
+ * `import { mppGated } from '@zerorun/paywrap-adapter-fastify'` even though
+ * the actual factory is attached per-app via `app.mppGated(...)`. The
+ * default pattern remains `app.mppGated(...)` — this re-export is a
+ * documentation marker, not a different code path.
+ */
+export const mppGated = (): never => {
+	throw new Error(
+		"paywrap/mppGated: use `app.mppGated({...})` — the factory is attached to the fastify instance by createFastifyApp()",
+	);
 };
