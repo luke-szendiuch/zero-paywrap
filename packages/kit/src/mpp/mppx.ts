@@ -4,6 +4,7 @@ import { http, createWalletClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { tempoChain } from "./chain.js";
 import { TEMPO_ESCROW, TEMPO_USDC, USDC_DECIMALS } from "./constants.js";
+import { memoryStore, redisStore } from "./stores.js";
 
 // `any` here is load-bearing: the inferred return type of `Mppx.create({
 // methods: [tempo.session(...)] })` drags half of mppx's internals into the
@@ -24,14 +25,72 @@ export type CreateMppxConfig = {
 	mppSecretKey: string;
 	/** Tempo RPC URL (e.g. `https://rpc.tempo.xyz`). */
 	tempoRpcUrl: string;
-	/** Channel-state store. Use `redisStore(...)` in prod, `memoryStore()` in tests. */
-	store: AnyStore;
+	/**
+	 * Channel-state store. Optional: when omitted, the kit picks a default —
+	 * if `process.env.REDIS_URL` is set AND `ioredis` is installed we connect
+	 * to Redis (logical db=9), otherwise we fall back to a lossy in-memory
+	 * store and emit a one-shot warning via `console.warn`. Pass an explicit
+	 * store (memoryStore / redisStore / custom) to opt out of the default.
+	 */
+	store?: AnyStore;
 	/**
 	 * Override mppx's in-memory on-chain cache TTL. Production keeps the short
 	 * 5s default so force-close detection stays responsive. Tests usually pass
 	 * `Number.POSITIVE_INFINITY` so verification reads only from seeded state.
 	 */
 	channelStateTtl?: number;
+};
+
+// One-shot warning so the in-memory fallback is visible in logs without
+// spamming every createPaywrapMpp call (eg. worker + web processes both
+// construct an instance).
+let warnedDefaultStore = false;
+
+/**
+ * Resolve the default channel-state store synchronously. Used when the
+ * caller omits `config.store` from `createPaywrapMpp`.
+ *
+ * If `process.env.REDIS_URL` is set AND `ioredis` resolves at runtime, we
+ * connect to Redis on logical db=9. Otherwise we fall back to an in-memory
+ * store and emit a one-shot warning.
+ *
+ * We use `require()` via `createRequire` so ioredis is NOT pulled in at
+ * module-load time for consumers who don't need it — the plan requires
+ * this to avoid forcing ioredis on consumers who don't want it.
+ */
+const resolveDefaultStore = (): AnyStore => {
+	const redisUrl = typeof process !== "undefined" ? process.env?.REDIS_URL : undefined;
+	if (redisUrl) {
+		try {
+			// eslint-disable-next-line @typescript-eslint/no-require-imports
+			const { createRequire } = require("node:module") as typeof import("node:module");
+			const req = createRequire(import.meta.url);
+			const mod = req("ioredis");
+			const IORedis = mod.default ?? mod.Redis ?? mod;
+			if (typeof IORedis !== "function") {
+				throw new Error("ioredis export is not a constructor");
+			}
+			const redis = new IORedis(redisUrl, { db: 9, maxRetriesPerRequest: null });
+			if (!warnedDefaultStore) {
+				console.warn("paywrap: no `store` provided — connecting to Redis via REDIS_URL (db=9).");
+				warnedDefaultStore = true;
+			}
+			return redisStore(redis);
+		} catch (err) {
+			if (!warnedDefaultStore) {
+				console.warn(
+					`paywrap: REDIS_URL set but ioredis unavailable (${err instanceof Error ? err.message : String(err)}) — falling back to in-memory store. State will be lost on restart.`,
+				);
+				warnedDefaultStore = true;
+			}
+			return memoryStore();
+		}
+	}
+	if (!warnedDefaultStore) {
+		console.warn("paywrap: no REDIS_URL — using in-memory store. State will be lost on restart.");
+		warnedDefaultStore = true;
+	}
+	return memoryStore();
 };
 
 export type PaywrapMpp = {
@@ -62,8 +121,9 @@ export const createPaywrapMpp = (config: CreateMppxConfig): PaywrapMpp => {
 		transport: http(config.tempoRpcUrl),
 	});
 
+	const store = config.store ?? resolveDefaultStore();
 	const sharedMethodConfig = {
-		store: config.store,
+		store,
 		currency: TEMPO_USDC,
 		decimals: USDC_DECIMALS,
 		account,
@@ -87,7 +147,7 @@ export const createPaywrapMpp = (config: CreateMppxConfig): PaywrapMpp => {
 		secretKey: config.mppSecretKey,
 	});
 
-	const channelStore = Session.ChannelStore.fromStore(config.store);
+	const channelStore = Session.ChannelStore.fromStore(store);
 
 	return { mppx, channelStore, account, client };
 };
