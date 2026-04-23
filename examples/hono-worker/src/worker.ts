@@ -1,11 +1,9 @@
-import { type PaywrapBindings, mppGated } from "@zerorun/paywrap-adapter-hono";
+import { createHonoApp, mppGated } from "@zerorun/paywrap-adapter-hono";
 import { buildPaywrapJson } from "@zerorun/paywrap/manifest";
 import { type MinimalKVNamespace, createPaywrapMpp, workersKvStore } from "@zerorun/paywrap/mpp";
-import { Hono } from "hono";
 import type { Address } from "viem";
+import { privateKeyToAccount } from "viem/accounts";
 import { randomJoke } from "./jokes.js";
-
-type Variables = PaywrapBindings & { walletAddress: Address };
 
 /**
  * Worker environment bindings. `PAYWRAP_KV` is the namespace declared in
@@ -25,35 +23,49 @@ const JOKE_SCOPE = "joke:1" as const;
 /** 0.02 USDC in micro-units (USDC has 6 decimals). */
 const JOKE_PRICE_MICRO = 20_000n;
 
-export const buildApp = () => {
-	const app = new Hono<{ Bindings: Env; Variables: Variables }>();
+/**
+ * Build the mpp instance from Worker env bindings. Pulled out of the
+ * factory so tests can construct an identical one and install test-only
+ * hooks (e.g. `stubVerifyCredential`) before making a request.
+ */
+export const mppFromEnv = (env: Env): ReturnType<typeof createPaywrapMpp> =>
+	createPaywrapMpp({
+		walletPrivateKey: env.WALLET_PRIVATE_KEY as `0x${string}`,
+		mppSecretKey: env.MPP_SECRET_KEY,
+		publicBaseUrl: env.PUBLIC_BASE_URL,
+		tempoRpcUrl: env.TEMPO_RPC_URL,
+		store: workersKvStore(env.PAYWRAP_KV),
+	});
 
-	// Per-request wiring. We build `mpp` inside each request because Worker
-	// env bindings (KV, secrets) are only available via `c.env`. Constructing
-	// `createPaywrapMpp` is cheap (a viem wallet client + mppx config).
-	app.use("*", async (c, next) => {
-		const mpp = createPaywrapMpp({
-			walletPrivateKey: c.env.WALLET_PRIVATE_KEY as `0x${string}`,
-			mppSecretKey: c.env.MPP_SECRET_KEY,
-			publicBaseUrl: c.env.PUBLIC_BASE_URL,
-			tempoRpcUrl: c.env.TEMPO_RPC_URL,
-			store: workersKvStore(c.env.PAYWRAP_KV),
-		});
-		c.set("paywrapApp", {
-			ctx: { mppx: mpp.mppx, mppxChannelStore: mpp.channelStore },
-		});
-		// Stash the wallet address for the manifest handler. The seller's
-		// payout wallet is derived from the private key.
-		c.set("walletAddress", mpp.account.address);
-		await next();
+export type BuildAppOptions = {
+	/**
+	 * Testing-only override: pre-built mpp to use instead of letting the
+	 * factory construct one per request. Tests use this to install a
+	 * `stubVerifyCredential` hook on a concrete instance.
+	 */
+	mpp?: ReturnType<typeof createPaywrapMpp>;
+};
+
+export const buildApp = (options: BuildAppOptions = {}) => {
+	// Factory ctx: Worker env bindings are only available per-request (via
+	// `c.env`), so the mpp instance is built per request in production.
+	// Tests can inject a pre-built `options.mpp` to install hooks.
+	const app = createHonoApp<{
+		mppx: ReturnType<typeof createPaywrapMpp>["mppx"];
+		mppxChannelStore: ReturnType<typeof createPaywrapMpp>["channelStore"];
+	}>((c) => {
+		const mpp = options.mpp ?? mppFromEnv(c.env as Env);
+		return { mppx: mpp.mppx, mppxChannelStore: mpp.channelStore };
 	});
 
 	app.get("/healthz", (c) => c.json({ status: "ok" }));
 
 	app.get("/.well-known/paywrap.json", (c) => {
-		// Pull walletAddress set in the middleware above. `as string` is safe
-		// because the middleware runs on every request before this handler.
-		const wallet = c.var.walletAddress;
+		// Seller payout wallet is derived from the private key. We keep this
+		// derivation out of the factory ctx because the manifest handler is
+		// the only consumer.
+		const env = c.env as Env;
+		const wallet = privateKeyToAccount(env.WALLET_PRIVATE_KEY as `0x${string}`).address as Address;
 		const manifest = buildPaywrapJson({
 			wallet,
 			paidRoutes: [
