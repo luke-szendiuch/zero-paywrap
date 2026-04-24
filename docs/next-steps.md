@@ -1,46 +1,46 @@
 # Next steps + open plan
 
-Living doc. Last updated: 2026-04-23. Update when work lands.
+Living doc. Last updated: 2026-04-24. Update when work lands.
 
 ## Current state
 
-### What's on npm (v0.0.1)
-- [`@zeroclickai/paywrap`](https://www.npmjs.com/package/@zeroclickai/paywrap) — kit
-- [`@zeroclickai/paywrap-adapter-fastify`](https://www.npmjs.com/package/@zeroclickai/paywrap-adapter-fastify)
-- [`@zeroclickai/paywrap-adapter-hono`](https://www.npmjs.com/package/@zeroclickai/paywrap-adapter-hono)
-- [`@zeroclickai/paywrap-cli`](https://www.npmjs.com/package/@zeroclickai/paywrap-cli) (bin: `paywrap`)
+### Production services (both LIVE)
+- **Redis integration** (session intent) — https://zero-redis-integration.onrender.com — paid runs proven via `zero fetch` against the redis sibling repo.
+- **Netlify integration** (charge intent) — https://zero-integrations.onrender.com — paid deploy proven E2E 2026-04-24: $0.02 settled on Tempo → zip uploaded → site served at https://zerotest7.netlify.app/. Seller wallet `0x253671ba1267Bc9F21F3E51A0e6D07928753470B` (no funding needed; charge-intent buyer pays gas).
+
+### What's on npm
+| Package | Version | Notes |
+|---|---|---|
+| [`@zeroclickai/paywrap`](https://www.npmjs.com/package/@zeroclickai/paywrap) | 0.0.1 | Kit |
+| [`@zeroclickai/paywrap-adapter-fastify`](https://www.npmjs.com/package/@zeroclickai/paywrap-adapter-fastify) | 0.0.1 | |
+| [`@zeroclickai/paywrap-adapter-hono`](https://www.npmjs.com/package/@zeroclickai/paywrap-adapter-hono) | 0.0.1 | Workers-safe |
+| [`@zeroclickai/paywrap-cli`](https://www.npmjs.com/package/@zeroclickai/paywrap-cli) | 0.0.1 | bin: `paywrap` |
+| [`@zeroxyz/cli`](https://www.npmjs.com/package/@zeroxyz/cli) | 0.0.30 | Buyer CLI. **Note:** binary upload via `-d @<file>` requires the v0.0.31+ release (PR piedotorg/zero#140 merged 2026-04-24, not yet tagged on npm at time of writing). |
 
 ### Repos
-| Repo | Where | Status |
-|---|---|---|
-| `zero-paywrap` | [github.com/zeroclickai/zero-paywrap](https://github.com/zeroclickai/zero-paywrap) (private) | `main` up-to-date. 143 tests green. |
-| `zero-redis-integration` | [github.com/zeroclickai/zero-redis-integration](https://github.com/zeroclickai/zero-redis-integration) (private) | `main` merged + **deployed to Render on `@zeroclickai/paywrap@0.0.1`**. 66/66 tests green. Session intent. |
-| `zero-integrations` (monorepo) | [github.com/zeroclickai/zero-integrations](https://github.com/zeroclickai/zero-integrations) (private) | `main` at `6384121`. Contains `services/netlify/`. 69/69 tests green. Redis removed — in-process fire-and-forget + stateless. **Ready for Render Starter deploy (`plan: starter` in render.yaml).** |
-| `zero` (main Zero repo) | [github.com/zeroclickai/zero](https://github.com/zeroclickai/zero) | Untouched during paywrap work. Buyer-side `PaymentService` still hand-rolled. |
+| Repo | Status |
+|---|---|
+| `zeroclickai/zero-paywrap` (private) | Kit + adapters + CLI. 143 tests green. v0.0.1 published. |
+| `zeroclickai/zero-redis-integration` (private) | Session-intent service. 66/66 tests. Live on Render. |
+| `zeroclickai/zero-integrations` (private monorepo) | Hosts `services/netlify/`. 72/72 tests. Live on Render — main is current. |
+| `piedotorg/zero` (the main Zero repo) | Buyer CLI + API. PR #140 merged: `zero fetch -d @<file>` now sends raw bytes (was UTF-8-decoded; broke binary uploads). |
 
-The standalone `zero-netlify-integration` repo is deprecated — its content lives in `zero-integrations/services/netlify/` with full git history via `git subtree add`. Don't push to the old repo.
-
-### Production services
-- **Redis integration** (session intent): `https://zero-redis-integration.onrender.com` — live, healthz + paywrap.json verified against new kit
-- **Netlify integration** (charge intent): code ready, not yet deployed — awaits Render Starter setup
+### What was proven E2E on 2026-04-24
+- `zero fetch -d @site.zip -H "Content-Type: application/zip" <url>` end-to-end against the live netlify service.
+- Six bugs discovered + fixed during dogfooding:
+  1. Render Docker context scoped too narrowly (zero-integrations#1).
+  2. Pricing dropped $0.05 → $0.02 per deploy (zero-integrations#2).
+  3. Service accepts three content-types: raw `application/zip`, JSON `{zipBase64,...}`, multipart (zero-integrations#3).
+  4. Netlify zip-deploy POST must NOT send `Accept: application/json` — flips the API into manifest-mode and dedupes against an empty baseline (zero-integrations#5).
+  5. Fastify's pooled Buffer reused after `setImmediate`; defensive copy via `Buffer.allocUnsafeSlow` (zero-integrations#6).
+  6. Zero CLI's `-d @<path>` was UTF-8-decoding files and corrupting binary; default Content-Type also flipped from `application/json` to `application/octet-stream` for `@<path>` (zero/#140).
 
 ---
 
 ## Immediate next steps (ranked by leverage)
 
-### 1. Deploy netlify to Render
-The monorepo is ready. Left to the human (needs Render dashboard + secrets + a funded wallet):
-
-1. **Generate service wallet**: `npx @zeroclickai/paywrap-cli generate-wallet` — save `WALLET_PRIVATE_KEY` + `WALLET_ADDRESS`
-2. **Generate MPP secret**: `openssl rand -hex 32` — save as `MPP_SECRET_KEY`
-3. **Get a Netlify PAT**: https://app.netlify.com/user/applications/personal — save as `NETLIFY_API_TOKEN`
-4. **New Blueprint on Render** pointing at [zeroclickai/zero-integrations](https://github.com/zeroclickai/zero-integrations). Render detects `render.yaml` at root.
-5. **Fill `netlify-mpp-common` env group** with the values above + `PUBLIC_BASE_URL` (the `*.onrender.com` URL Render assigns), `NETLIFY_TEAM_SLUG` (optional), `NETLIFY_ACCOUNT_SLUG` (optional)
-6. **No seller funding needed.** Charge-intent broadcasts the buyer's signed tx; the buyer's USDC pays both price and `feeToken: USDC` gas. Confirmed by reading mppx 0.6.3 source — `createPaywrapMpp` doesn't pass `feePayer`, so `isFeePayerTx=false` and the tx flows through unchanged. (Session-intent services do need USDC for `openChannel`/`closeChannel` gas.)
-7. **Deploy** — Docker build runs `pnpm install` (from monorepo root) + starts tsx. Healthz returns `{"ok":true,"probes":{"netlify":"up"},"wallet":"0x..."}`
-8. **Register**: `PUBLIC_BASE_URL=... ZERO_API_URL=... WALLET_PRIVATE_KEY=... npx @zeroclickai/paywrap-cli register` to list the service in Zero's catalog
-
-Effort: ~30 min assuming the accounts already exist.
+### 1. Tag + publish `@zeroxyz/cli` v0.0.31 (5 min)
+PR piedotorg/zero#140 is merged. Cut `v0.0.31` tag → release-cli workflow → npm publish. Until that ships, `npm i -g @zeroxyz/cli@latest` still has the binary-upload bug (366-byte zip arrives as 590 bytes of replacement chars on the wire).
 
 ### 2. Zero CLI stays separate — NOT refactoring onto kit (decided 2026-04-23)
 User confirmed: Zero CLI's `payment-service.ts` stays as-is. The buyer side and the seller kit are kept intentionally separate. No refactor, no shared primitives pulled into CLI. If the CLI and kit drift, that's acceptable — they serve different consumers (end-user CLI vs. service authors) and bundling them would couple releases.
@@ -155,8 +155,10 @@ One viral buyer can exhaust the shared monthly Netlify bandwidth allocation of t
 ## How to resume after compact
 
 1. Read this file.
-2. `git log --oneline -20` in `/Users/bruceirons/agent-repos/zero-paywrap/` to see where we left off.
-3. `git log --oneline -10` in redis + netlify consumers for their state.
-4. `curl https://zero-redis-integration.onrender.com/healthz` — if this returns `{ok:true, probes:{db:"up", redis:"up"}, wallet:"0xb9Ce..."}`, production is healthy on the kit.
-5. `npm view @zeroclickai/paywrap version` — confirms current published version.
-6. Pick an item from "Immediate next steps" and proceed.
+2. `git log --oneline -20` in `/Users/bruceirons/agent-repos/zero-paywrap/`.
+3. `git log --oneline -10` in `zero-integrations/` and `zero-redis-integration/`.
+4. Health checks (both should 200):
+   - `curl https://zero-redis-integration.onrender.com/healthz` → `{ok:true, probes:{db:"up", redis:"up"}, wallet:"0xb9Ce..."}`
+   - `curl https://zero-integrations.onrender.com/healthz` → `{ok:true, probes:{netlify:"up"}, wallet:"0x2536..."}`
+5. `npm view @zeroclickai/paywrap version` and `npm view @zeroxyz/cli version`.
+6. Pick from "Immediate next steps" and proceed.
