@@ -14,12 +14,31 @@ export type PaidRoute = {
 	description: string;
 	/** Per-route wallet override; falls back to top-level wallet. */
 	wallet?: string;
+	/**
+	 * Hint to buyers about what to send. Defaults to `application/json` if
+	 * omitted. Set explicitly for routes that take binary uploads
+	 * (`application/zip`, `application/octet-stream`) or non-JSON text
+	 * (`text/csv`, `application/xml`). Buyers and the Zero catalog UI use
+	 * this to render the right "how to call this" snippet without having
+	 * to call the route first to discover.
+	 */
+	requestContentType?: string;
+	/**
+	 * Hint to buyers about what to expect back. Defaults to
+	 * `application/json`. Set explicitly for routes that return binary
+	 * (`application/pdf`, `image/png`, `audio/mpeg`) so the buyer can
+	 * pre-allocate a stream/file handle and avoid trying to JSON.parse
+	 * bytes. Pure metadata — does not change runtime behavior.
+	 */
+	responseContentType?: string;
 };
 
 export type FreeRoute = {
 	method: string;
 	path: string;
 	description?: string;
+	requestContentType?: string;
+	responseContentType?: string;
 };
 
 export type PaywrapManifest = {

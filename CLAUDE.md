@@ -52,6 +52,8 @@ Two consumer repos live as siblings: `../zero-redis-integration/` (session inten
 - Workers KV is NOT linearizable; the store adapter documents this loudly. Safe for charge-intent, unsafe for high-concurrency session.
 - `tempo.charge.verify()` settles on-chain atomically during verify — reversed-order route logic risks paying without delivering.
 - **Charge-intent = zero seller funding; session-intent = seller funding required.** Charge broadcasts the buyer's signed Tempo tx as-is (buyer's USDC pays gas via `feeToken: USDC`). The seller wallet is just a signer for challenge HMAC + a recipient — it does not need to hold USDC. Session intent is the opposite: the seller submits `openChannel`/`closeChannel` txs themselves and needs USDC to pay gas for those. If you opt into `feePayer: true` on charge (sponsor gas for the buyer), *then* the seller pays — default in mppx is no fee-payer.
+- **Fastify content-type parsers return pooled Buffers** — fire-and-forget after `reply.send()` will ship the wrong bytes once the pool slot is recycled. Use `defensiveBufferCopy(buf)` from `@zeroclickai/paywrap-adapter-fastify` before any `setImmediate(() => upstream.upload(...))`. `Buffer.from()` and `Uint8Array.from()` don't fix this — they re-pool. Diagnosed live during netlify integration 2026-04-24.
+- **Upstream proxies must sniff Content-Type before parsing** — a naive client.text()+JSON.parse corrupts binary endpoints (PNG, PDF, audio). Use `proxyUpstreamRequest` from `@zeroclickai/paywrap/proxy` which returns a discriminated `{kind: "json"|"binary", ...}`. Diagnosed live during jigsawstack integration 2026-04-26 (image_generation + html_to_any).
 
 ## Publishing
 

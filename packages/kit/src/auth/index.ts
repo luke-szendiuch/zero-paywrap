@@ -180,3 +180,26 @@ export const extractCredential = (header: string | undefined): RawCredential | n
 		return null;
 	}
 };
+
+/**
+ * Stable fingerprint of a serialized `Payment ...` Authorization header.
+ * Used as a charge-intent idempotency key: two retries of the same paid
+ * request share a fingerprint, so consumer code can deduplicate
+ * post-settlement work (e.g. don't double-create a Netlify site / Daytona
+ * sandbox if a network-partitioned client retries with the same credential).
+ *
+ * SHA-256 via Web Crypto so it runs identically on Node and Cloudflare
+ * Workers without the `node:crypto` import. Returns the full 64-char hex
+ * digest; consumers typically slice the first 8-16 chars for compact ids.
+ *
+ * The header is normalized (`Payment ` prefix added if missing) so the
+ * `Authorization:` and `Payment:` header forms produce the same digest.
+ */
+export const fingerprintCredential = async (header: string): Promise<string> => {
+	const normalized = header.startsWith("Payment ") ? header : `Payment ${header}`;
+	const data = new TextEncoder().encode(normalized);
+	const digest = await crypto.subtle.digest("SHA-256", data);
+	return Array.from(new Uint8Array(digest))
+		.map((b) => b.toString(16).padStart(2, "0"))
+		.join("");
+};

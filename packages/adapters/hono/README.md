@@ -90,3 +90,28 @@ nodejs_compat = true  # required for node:util (transitive via mppx)
 ## Non-Workers runtimes
 
 The adapter is runtime-agnostic. On Node or Bun, use `redisStore(new IORedis(...))` from `@zeroclickai/paywrap/mpp` for durable, linearizable state. `workersKvStore` is Workers-specific.
+
+## Typing custom data on `c.var`
+
+`mppGated` already sets typed `c.var.payer` and `c.var.verifiedCredential`. If your `preCheck` needs to stash data for the handler — e.g. a parsed body or a derived id — use module augmentation so the keys are typed end-to-end:
+
+```ts
+declare module "@zeroclickai/paywrap-adapter-hono" {
+  interface PaywrapBindings {
+    sandboxInput?: { sandboxName: string; chargeHash: string };
+  }
+}
+
+// preCheck:
+c.set("sandboxInput", { sandboxName: "foo", chargeHash: "ff00" });
+
+// handler — fully typed:
+const input = c.get("sandboxInput");
+if (input) console.log(input.chargeHash);
+```
+
+The `as never` cast pattern works for one-off prototypes (`c.set("foo" as never, value as never)`) but module augmentation is preferred for anything that ships.
+
+## Avoiding double-parsing in `preCheck`
+
+Hono's `c.req.json()` memoizes per request — calling it again from the handler returns the cached parse. Same for `c.req.formData()` etc. So a `preCheck` that needs to read the body can safely call `c.req.json()` without forcing the handler to re-parse.

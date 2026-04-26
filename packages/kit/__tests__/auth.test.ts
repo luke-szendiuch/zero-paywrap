@@ -9,6 +9,7 @@ import {
 	buildProofChallenge,
 	buildSessionChallenge,
 	claimedPayerFromRawCredential,
+	fingerprintCredential,
 	payerFromCredential,
 } from "../src/auth/index.js";
 import { TEMPO_CHAIN_ID, TEMPO_ESCROW } from "../src/mpp/constants.js";
@@ -232,5 +233,30 @@ describe("auth.buildProofChallenge", () => {
 		});
 		expect(res.status).toBe(402);
 		expect(res.headers["www-authenticate"]).toMatch(/^Payment /);
+	});
+});
+
+describe("auth.fingerprintCredential", () => {
+	it("produces a 64-char hex sha256 digest", async () => {
+		const out = await fingerprintCredential("Payment foo");
+		expect(out).toMatch(/^[0-9a-f]{64}$/);
+	});
+
+	it("is deterministic: same input → same digest", async () => {
+		const a = await fingerprintCredential("Payment foo");
+		const b = await fingerprintCredential("Payment foo");
+		expect(a).toBe(b);
+	});
+
+	it("differs by input", async () => {
+		const a = await fingerprintCredential("Payment foo");
+		const b = await fingerprintCredential("Payment bar");
+		expect(a).not.toBe(b);
+	});
+
+	it("normalizes the Payment prefix — header with and without prefix fingerprint identically", async () => {
+		const withPrefix = await fingerprintCredential("Payment abcdef");
+		const withoutPrefix = await fingerprintCredential("abcdef");
+		expect(withPrefix).toBe(withoutPrefix);
 	});
 });

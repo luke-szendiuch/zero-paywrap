@@ -49,6 +49,33 @@ await app.listen({ port: 3000 });
   - `preCheck(ctx)` — async hook that runs AFTER credential parse but BEFORE verify/settle. Return `{ok: true}` to proceed, `{ok: false, status, body}` to short-circuit without charging, or `{ok: "already_done", payer, verifiedCredential}` to skip verify on idempotent retries.
 - `sendSessionChallenge(app, reply, opts)` / `sendChargeChallenge(app, reply, opts)` / `sendProofChallenge(app, reply, scope, detail, meta?)` — manual 402 responders.
 - `extractCredential(headerValue)` — re-exported from `@zeroclickai/paywrap/auth`.
+- `defensiveBufferCopy(source)` — Node-only helper that copies a Fastify-managed Buffer into a fresh, pool-free allocation. **Use this whenever you fire-and-forget after the reply** (see Gotchas).
+
+## Gotchas
+
+### Pooled Buffers + `setImmediate` after reply
+
+Fastify's content-type parsers (`@fastify/multipart`, `addContentTypeParser({parseAs: "buffer"})`) return Buffers backed by a shared pool. A 200-byte upload typically lives at byteOffset=520 of an 8192-byte pool. If your route does:
+
+```ts
+reply.status(202).send({ ok: true });
+// ❌ DANGER: zipBytes is a pool view; the next request can recycle the slot
+setImmediate(() => upstream.upload(req.body));
+```
+
+Fastify can release the request and recycle that pool slot before `setImmediate` fires. The fire-and-forget then ships **the wrong bytes** — observed live in the netlify integration: Netlify reported a "ready" deploy with an empty file_tree because the bytes it received didn't match the buyer's zip.
+
+Fix:
+
+```ts
+import { defensiveBufferCopy } from "@zeroclickai/paywrap-adapter-fastify";
+
+reply.status(202).send({ ok: true });
+const safeCopy = defensiveBufferCopy(req.body as Buffer);
+setImmediate(() => upstream.upload(safeCopy));   // ✅ pool-free
+```
+
+`Buffer.from(buf)` and `Uint8Array.from(buf)` both round-trip through the pool for small allocations and don't fix this. `defensiveBufferCopy` uses `Buffer.allocUnsafeSlow` which bypasses the pool.
 
 ## Design
 

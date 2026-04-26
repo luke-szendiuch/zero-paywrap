@@ -119,13 +119,15 @@ The kit ships **no root barrel** — import only the subpath you need. This keep
 | Subpath | Exports | Reach for it when… |
 |---|---|---|
 | `@zeroclickai/paywrap/mpp` | `createPaywrapMpp`, `memoryStore`, `redisStore`, `workersKvStore`, `closeSessionOnChain`, `verifyWithScope`, `assertVoucherAdvances`, `TEMPO_ESCROW`, `TEMPO_USDC`, `TEMPO_CHAIN_ID`, `tempoChain` | Bootstrapping mppx, choosing a channel-state store (in-memory / Redis / Workers KV), verifying credentials at route handlers, closing channels on-chain. |
-| `@zeroclickai/paywrap/auth` | `buildSessionChallenge`, `buildChargeChallenge`, `buildProofChallenge`, `payerFromCredential`, `VerifiedCredential`, `VERIFIED` (brand symbol) | Minting 402 challenges from any framework, resolving the authenticated payer address from a verified credential. |
+| `@zeroclickai/paywrap/auth` | `buildSessionChallenge`, `buildChargeChallenge`, `buildProofChallenge`, `payerFromCredential`, `fingerprintCredential`, `VerifiedCredential`, `VERIFIED` (brand symbol) | Minting 402 challenges from any framework, resolving the authenticated payer address from a verified credential, computing a stable idempotency key from a `Payment …` header. |
 | `@zeroclickai/paywrap/signing` | `signVoucher`, `buildVoucherCredential`, `buildChargeCredential`, `channelIdFromLabel` | Buyer-side code (CLI, agent) producing signed Tempo vouchers / charge credentials. Useful in integration tests too. |
 | `@zeroclickai/paywrap/testing` | `seedChannel`, `stubVerifyCredential` | Seeding a `ChannelStore` with a fake-open channel in tests; stubbing `mppx.verifyCredential` to skip on-chain settlement. Not for production. |
 | `@zeroclickai/paywrap/crypto` | `encryptSecret`, `decryptSecret`, AES-256-GCM helpers | At-rest encryption of upstream credentials (connection strings, API tokens) stored in your DB. |
 | `@zeroclickai/paywrap/manifest` | `buildPaywrapJson` | Serving `/.well-known/paywrap.json` — the service manifest indexers + agents use to learn your pricing. |
 | `@zeroclickai/paywrap/health` | `aggregateHealthProbes` | Assembling `/healthz` responses from per-subsystem probes. |
 | `@zeroclickai/paywrap/setup` | `generateWallet`, `generateMppSecretKey`, `prefundWallet`, `registerWithZero` | One-shot setup scripts the CLI wraps; callable from a consumer's own `pnpm setup`. |
+| `@zeroclickai/paywrap/proxy` | `proxyUpstreamRequest`, `UpstreamProxyResponse` | Charge-intent services proxying an upstream API. Sniffs Content-Type and returns a discriminated `{kind: "json" \| "binary"}` so PNG/PDF endpoints don't get JSON-corrupted. |
+| `@zeroclickai/paywrap/refund` | `recordRefundOwed`, `RefundOwedRecord` | Standardized log shape for refund-eligible failures (upstream 5xx after charge settles). One JSON line per failure with the canonical `paywrap_refund_owed` marker; an operator can grep across services and reconcile. |
 
 ## Manual route pattern (when you can't use `mppGated`)
 
