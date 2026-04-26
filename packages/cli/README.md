@@ -30,6 +30,7 @@ paywrap create my-service --yes    # all defaults, non-interactive
 | Command | Purpose |
 |---|---|
 | `paywrap generate-wallet` | Print a fresh keypair as `WALLET_PRIVATE_KEY=…` + `WALLET_ADDRESS=…` |
+| `paywrap generate-secrets` | Same as above + `MPP_SECRET_KEY=…` — one-shot bootstrap for a new service |
 | `paywrap prefund <addr> [--amount-micro N]` | Send USDC on Tempo from `WALLET_PRIVATE_KEY` to `<addr>` (default 50 000 micro = $0.05) |
 | `paywrap register` | Publish the deployed service to the Zero catalog via `/v1/register` |
 | `paywrap check <url>` | Fetch `<url>/healthz` + `<url>/.well-known/paywrap.json` and pretty-print |

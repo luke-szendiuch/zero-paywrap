@@ -4,6 +4,7 @@ import { Command } from "commander";
 import { execa } from "execa";
 import { runCheck } from "./commands/check.js";
 import { runCreate } from "./commands/create.js";
+import { runGenerateSecrets } from "./commands/generate-secrets.js";
 import { runGenerateWallet } from "./commands/generate-wallet.js";
 import { runPrefund } from "./commands/prefund.js";
 import { runRegister } from "./commands/register.js";
@@ -79,6 +80,15 @@ program
 	.description("Print WALLET_PRIVATE_KEY + WALLET_ADDRESS for a fresh keypair")
 	.action(() => {
 		runGenerateWallet();
+	});
+
+program
+	.command("generate-secrets")
+	.description(
+		"Print WALLET_PRIVATE_KEY + WALLET_ADDRESS + MPP_SECRET_KEY (one stop for new services)",
+	)
+	.action(() => {
+		runGenerateSecrets();
 	});
 
 program
