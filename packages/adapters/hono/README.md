@@ -87,6 +87,31 @@ id = "<your-namespace-id>"
 nodejs_compat = true  # required for node:util (transitive via mppx)
 ```
 
+## x402 protocol
+
+Same adapter, different protocol. `x402Gated` wraps `@x402/hono`'s `paymentMiddlewareFromHTTPServer` for parity with `mppGated` — gate one route at a time without standing up a top-level x402 router. Settlement runs through a facilitator on Base (mainnet) or Base Sepolia (testnet); the seller wallet is just the receive address.
+
+```ts
+import { Hono } from "hono";
+import { createPaywrapX402 } from "@zeroclickai/paywrap/x402";
+import { x402Gated } from "@zeroclickai/paywrap-adapter-hono";
+
+const x402 = createPaywrapX402({
+  payTo: "0xYourSellerAddress",
+  network: "base", // or "base-sepolia" for testnet
+  // facilitator: { url: "https://x402.org/facilitator" } — default
+});
+
+const app = new Hono();
+app.post("/generate", x402Gated(x402, { price: "0.005" }), (c) =>
+  c.json({ result: "..." }),
+);
+```
+
+You can mix protocols on the same Hono app — register `mppGated` on routes that should accept MPP credentials and `x402Gated` on routes that should accept x402 payments. Indexers reading `/.well-known/paywrap.json` already see per-route `protocol: "mpp" | "x402"`.
+
+For routes that need a custom `accepts` (multiple schemes/networks, non-USDC asset), pass `acceptsOverride` instead of `price`.
+
 ## Non-Workers runtimes
 
 The adapter is runtime-agnostic. On Node or Bun, use `redisStore(new IORedis(...))` from `@zeroclickai/paywrap/mpp` for durable, linearizable state. `workersKvStore` is Workers-specific.

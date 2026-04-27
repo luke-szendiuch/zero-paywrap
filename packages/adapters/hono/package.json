@@ -27,6 +27,8 @@
 		"prepublishOnly": "pnpm build"
 	},
 	"dependencies": {
+		"@x402/core": "^2.9.0",
+		"@x402/hono": "^2.9.0",
 		"@zeroclickai/paywrap": "workspace:*"
 	},
 	"peerDependencies": {

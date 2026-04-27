@@ -1,6 +1,6 @@
 # @zeroclickai/paywrap
 
-Framework-agnostic primitives for building **paid API services** that speak payment protocols over HTTP. Today the kit covers **MPP** (session + charge intents on Tempo, USDC settlement); **x402** is the next protocol we're slotting in alongside without breaking consumers.
+Framework-agnostic primitives for building **paid API services** that speak payment protocols over HTTP. The kit covers **MPP** (session + charge intents on Tempo, USDC settlement) and **x402** (Stripe-incubated facilitator-mediated USDC settlement on Base / Base Sepolia). Each protocol lives behind its own subpath — pick one or run both side-by-side per route.
 
 **Two ways in:**
 1. **Already have an API?** `pnpm add @zeroclickai/paywrap @zeroclickai/paywrap-adapter-fastify` — 10 lines of middleware to gate any route (see Path A below).
@@ -119,6 +119,7 @@ The kit ships **no root barrel** — import only the subpath you need. This keep
 | Subpath | Exports | Reach for it when… |
 |---|---|---|
 | `@zeroclickai/paywrap/mpp` | `createPaywrapMpp`, `memoryStore`, `redisStore`, `workersKvStore`, `closeSessionOnChain`, `verifyWithScope`, `assertVoucherAdvances`, `TEMPO_ESCROW`, `TEMPO_USDC`, `TEMPO_CHAIN_ID`, `tempoChain` | Bootstrapping mppx, choosing a channel-state store (in-memory / Redis / Workers KV), verifying credentials at route handlers, closing channels on-chain. |
+| `@zeroclickai/paywrap/x402` | `createPaywrapX402`, `BASE_NETWORK`, `BASE_SEPOLIA_NETWORK`, `BASE_USDC`, `BASE_SEPOLIA_USDC`, `x402NetworkId`, `x402UsdcAsset` | Bootstrapping the seller-side x402 resource server (Base / Base Sepolia, exact-evm, USDC). Pair with the hono adapter's `x402Gated()` to gate routes. Settlement runs through the configured x402 facilitator (defaults to `https://x402.org/facilitator`). |
 | `@zeroclickai/paywrap/auth` | `buildSessionChallenge`, `buildChargeChallenge`, `buildProofChallenge`, `payerFromCredential`, `fingerprintCredential`, `VerifiedCredential`, `VERIFIED` (brand symbol) | Minting 402 challenges from any framework, resolving the authenticated payer address from a verified credential, computing a stable idempotency key from a `Payment …` header. |
 | `@zeroclickai/paywrap/signing` | `signVoucher`, `buildVoucherCredential`, `buildChargeCredential`, `channelIdFromLabel` | Buyer-side code (CLI, agent) producing signed Tempo vouchers / charge credentials. Useful in integration tests too. |
 | `@zeroclickai/paywrap/testing` | `seedChannel`, `stubVerifyCredential` | Seeding a `ChannelStore` with a fake-open channel in tests; stubbing `mppx.verifyCredential` to skip on-chain settlement. Not for production. |

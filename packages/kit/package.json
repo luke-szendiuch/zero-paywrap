@@ -15,6 +15,7 @@
 	"publishConfig": { "access": "public" },
 	"exports": {
 		"./mpp": { "types": "./dist/mpp/index.d.ts", "import": "./dist/mpp/index.js" },
+		"./x402": { "types": "./dist/x402/index.d.ts", "import": "./dist/x402/index.js" },
 		"./auth": { "types": "./dist/auth/index.d.ts", "import": "./dist/auth/index.js" },
 		"./signing": { "types": "./dist/signing/index.d.ts", "import": "./dist/signing/index.js" },
 		"./testing": { "types": "./dist/testing/index.d.ts", "import": "./dist/testing/index.js" },
@@ -32,6 +33,8 @@
 		"prepublishOnly": "pnpm build"
 	},
 	"dependencies": {
+		"@x402/core": "^2.9.0",
+		"@x402/evm": "^2.9.0",
 		"mppx": "^0.6.2",
 		"viem": "^2.21.55"
 	},
