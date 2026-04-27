@@ -127,7 +127,25 @@ The kit ships **no root barrel** — import only the subpath you need. This keep
 | `@zeroclickai/paywrap/health` | `aggregateHealthProbes` | Assembling `/healthz` responses from per-subsystem probes. |
 | `@zeroclickai/paywrap/setup` | `generateWallet`, `generateMppSecretKey`, `prefundWallet` | One-shot setup scripts the CLI wraps; callable from a consumer's own `pnpm setup`. |
 | `@zeroclickai/paywrap/proxy` | `proxyUpstreamRequest`, `UpstreamProxyResponse` | Charge-intent services proxying an upstream API. Sniffs Content-Type and returns a discriminated `{kind: "json" \| "binary"}` so PNG/PDF endpoints don't get JSON-corrupted. |
-| `@zeroclickai/paywrap/refund` | `recordRefundOwed`, `RefundOwedRecord` | Standardized log shape for refund-eligible failures (upstream 5xx after charge settles). One JSON line per failure with the canonical `paywrap_refund_owed` marker; an operator can grep across services and reconcile. |
+
+### Refund-eligible failures: just log this shape
+
+When charge-intent settles and the upstream call fails (5xx, validation error, etc.), the buyer paid for nothing. Refunds happen out-of-band by an operator script. The kit doesn't ship a wrapper — just emit one JSON line per failure with this shape, on `console.error`:
+
+```ts
+console.error(JSON.stringify({
+  msg: "paywrap_refund_owed",
+  payer: "0xabc",
+  sku: "jigsaw-image-gen:v2",
+  amountUsdcMicro: "50000",
+  reason: "upstream_5xx",
+  details: { upstreamStatus: 503 },
+  chargeHash: "ff00",
+  timestamp: new Date().toISOString(),
+}));
+```
+
+Standard shape across services means one operator grep handles every paywrap deployment.
 
 ## Manual route pattern (when you can't use `mppGated`)
 

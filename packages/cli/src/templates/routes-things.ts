@@ -156,9 +156,13 @@ export const thingRoutes: FastifyPluginAsyncZod = async (app) => {
 
 const chargeRoutes = (config: ScaffoldConfig): string => {
 	const priceMicro = Math.round(Number(config.priceUsdc) * 1_000_000) || 20_000;
-	return `import { createHash } from "node:crypto";
-import { extractCredential, sendChargeChallenge, sendProofChallenge } from "@zeroclickai/paywrap-adapter-fastify";
-import { payerFromCredential } from "@zeroclickai/paywrap/auth";
+	return `import {
+\tdefensiveBufferCopy,
+\textractCredential,
+\tsendChargeChallenge,
+\tsendProofChallenge,
+} from "@zeroclickai/paywrap-adapter-fastify";
+import { fingerprintCredential, payerFromCredential } from "@zeroclickai/paywrap/auth";
 import { verifyWithScope } from "@zeroclickai/paywrap/mpp";
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
 import { formatUnits } from "viem";
@@ -168,15 +172,15 @@ import { resourceClient, type Resource } from "../services/thing-client.js";
 const SCOPE = "${config.scope}" as const;
 const PRICE_USDC_MICRO = ${priceMicro}n;
 
-/**
- * Fingerprint a \`Payment <...>\` header into a compact hex id. Used as the
- * idempotency key stored in the upstream provider's metadata — a retry with
- * the same credential returns the existing resource without re-charging.
- */
-const fingerprintCredential = (header: string): string => {
-\tconst normalized = header.startsWith("Payment ") ? header : \`Payment \${header}\`;
-\treturn createHash("sha256").update(normalized).digest("hex").slice(0, 24);
-};
+// fingerprintCredential is the shared SHA-256 idempotency helper from the
+// kit. Use the FIRST 8-16 hex chars as your resource id — full digest is
+// 64 hex (overkill for naming).
+//
+// defensiveBufferCopy is the safe way to retain a Fastify Buffer body
+// past reply.send(). If you do setImmediate(() => upstream.upload(buf))
+// without copying, Fastify's pool slot can be recycled by the next
+// request and you ship the wrong bytes upstream — see the adapter
+// README "Gotchas" section for the live diagnosis.
 
 const sendPaid = (
 \t// biome-ignore lint/suspicious/noExplicitAny: fastify app/reply generics
@@ -220,7 +224,8 @@ export const thingRoutes: FastifyPluginAsyncZod = async (app) => {
 \t\tif (!credential || !header) return sendPaid(app, reply, "payment_required");
 
 \t\t// TODO: parse req.body and return 400 on invalid input BEFORE verify.
-\t\tconst chargeHash = fingerprintCredential(header);
+\t\t// Web-Crypto async; use the first 16 hex chars for compact ids.
+\t\tconst chargeHash = (await fingerprintCredential(header)).slice(0, 16);
 
 \t\t// Pre-check upstream for an existing resource with this chargeHash.
 \t\t// Retry returns the existing one without re-charging.
