@@ -2,11 +2,9 @@ import { privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import { generateMppSecretKey, generateWallet } from "../src/setup/index.js";
 
-// `prefundWallet` and `registerWithZero` are intentionally NOT tested here:
-//  - prefundWallet hits a live Tempo RPC and moves funds
-//  - registerWithZero posts to a Zero API instance
-// Both need a live environment; we cover them via the CLI's e2e smoke
-// instead.
+// `prefundWallet` is intentionally not tested here — it hits a live Tempo
+// RPC and moves funds. Covered via the CLI's e2e smoke. (`registerWithZero`
+// was removed in 0.0.2 pending Zero's public registration API.)
 
 describe("setup.generateWallet", () => {
 	it("produces a valid keypair whose address derives from the private key", () => {

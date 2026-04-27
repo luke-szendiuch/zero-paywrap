@@ -71,7 +71,7 @@ All packages live in `packages/` with pnpm workspace linking.
 | `@zeroclickai/paywrap` | `packages/kit/` | Framework-agnostic primitives: mppx config, verifyWithScope, signing, crypto, manifest, health, setup, stores (memory / redis / workers-kv) | 74 | Core — API surface stabilizing |
 | `@zeroclickai/paywrap-adapter-fastify` | `packages/adapters/fastify/` | Fastify middleware (`mppGated`), 402 response helpers, preconfigured app factory | 18 | Stable, both reference consumers use it |
 | `@zeroclickai/paywrap-adapter-hono` | `packages/adapters/hono/` | Same capability as Fastify adapter but for Hono. Runs on Cloudflare Workers. | 22 | Shipped, no production consumer yet |
-| `@zeroclickai/paywrap-cli` (`bin: paywrap`) | `packages/cli/` | Interactive scaffolder + ops commands (generate-wallet, prefund, register, check) | 17 | Functional, light polish pending |
+| `@zeroclickai/paywrap-cli` (`bin: paywrap`) | `packages/cli/` | Interactive scaffolder + ops commands (generate-wallet, generate-secrets, prefund, check) | 17 | Functional, light polish pending |
 
 Not yet shipped:
 - `@zeroclickai/paywrap-client` — buyer SDK (`createPayingFetch`). Highest-priority roadmap item.
@@ -106,7 +106,8 @@ Not yet shipped:
 │ /crypto       — AES-256-GCM encryptSecret/decryptSecret      │
 │ /manifest     — buildPaywrapJson (.well-known/paywrap.json)  │
 │ /health       — aggregateHealthProbes                        │
-│ /setup        — generateWallet, prefundWallet, register...   │
+│ /setup        — generateWallet, generateMppSecretKey,        │
+│                 prefundWallet                                 │
 │ /testing      — seedChannel, stubVerifyCredential            │
 └───────────┬─────────────────────────────────────────────────┘
             │ consumes
@@ -132,7 +133,7 @@ Not yet shipped:
 
 6. **Honest about failure modes.** Workers KV is not atomic; we document it loudly and ship it anyway because it's useful. `node:util` in mppx requires `nodejs_compat` on Workers; we document it. We do not pretend limitations away.
 
-7. **The CLI does one thing.** `paywrap create` scaffolds. `paywrap generate-wallet`, `prefund`, `register`, `check` are ops commands. It is not a framework. It does not dictate how your service evolves.
+7. **The CLI does one thing.** `paywrap create` scaffolds. `paywrap generate-wallet`, `generate-secrets`, `prefund`, `check` are ops commands. It is not a framework. It does not dictate how your service evolves.
 
 8. **No barrel files in the kit.** Per project style, consumers import from subpaths (`@zeroclickai/paywrap/mpp`). There is no `@zeroclickai/paywrap` root index.
 

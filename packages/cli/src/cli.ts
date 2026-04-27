@@ -7,7 +7,6 @@ import { runCreate } from "./commands/create.js";
 import { runGenerateSecrets } from "./commands/generate-secrets.js";
 import { runGenerateWallet } from "./commands/generate-wallet.js";
 import { runPrefund } from "./commands/prefund.js";
-import { runRegister } from "./commands/register.js";
 
 // Each subcommand delegates to a `run*` function in `./commands/`. Keep this
 // file dumb so tests can exercise commands without spawning a child process.
@@ -99,13 +98,6 @@ program
 		await runPrefund(address, {
 			...(opts.amountMicro !== undefined ? { amountMicro: BigInt(opts.amountMicro) } : {}),
 		});
-	});
-
-program
-	.command("register")
-	.description("Publish this service to Zero's catalog")
-	.action(async () => {
-		await runRegister();
 	});
 
 program

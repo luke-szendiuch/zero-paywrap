@@ -1,6 +1,6 @@
 {
 	"name": "@zeroclickai/paywrap",
-	"version": "0.0.1",
+	"version": "0.0.2",
 	"description": "Primitives for building paid API services on-chain (MPP today, x402 later).",
 	"type": "module",
 	"license": "MIT",

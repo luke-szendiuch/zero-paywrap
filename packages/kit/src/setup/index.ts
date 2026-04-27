@@ -55,26 +55,7 @@ export const prefundWallet = async (params: PrefundWalletParams): Promise<`0x${s
 	});
 };
 
-export type RegisterWithZeroParams = {
-	zeroApiUrl: string;
-	publicBaseUrl: string;
-	protocol?: "mpp" | "x402";
-};
-
-/**
- * Publish a deployed service to Zero's catalog. Call once per deployment
- * after the URL is live and `/.well-known/paywrap.json` resolves.
- */
-export const registerWithZero = async (
-	params: RegisterWithZeroParams,
-): Promise<{ ok: boolean; status: number; body: string }> => {
-	const r = await fetch(`${params.zeroApiUrl}/v1/register`, {
-		method: "POST",
-		headers: { "content-type": "application/json" },
-		body: JSON.stringify({
-			url: params.publicBaseUrl,
-			protocol: params.protocol ?? "mpp",
-		}),
-	});
-	return { ok: r.ok, status: r.status, body: await r.text() };
-};
+// `registerWithZero` (and the matching `paywrap register` CLI command)
+// previously published the service URL to Zero's catalog at /v1/register.
+// Removed in 0.0.2 — that route stays private until Zero is ready to
+// accept public-facing registration traffic. Re-export when it lands.

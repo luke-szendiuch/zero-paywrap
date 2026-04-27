@@ -24,9 +24,6 @@ export const readmeTemplate = (config: ScaffoldConfig): string => {
 		stepBodies.push("Generate and run migrations: `pnpm db:generate && pnpm db:migrate`.");
 	}
 	stepBodies.push("Start: `pnpm dev`.");
-	stepBodies.push(
-		"Publish to Zero once public: `npx @zeroclickai/paywrap-cli register` (needs `ZERO_API_URL`, `PUBLIC_BASE_URL`, `WALLET_PRIVATE_KEY`).",
-	);
 	const steps = stepBodies.map((body, i) => `${i + 1}. ${body}`);
 
 	// Example invocation against the scaffolded endpoint. For both intents
@@ -69,7 +66,6 @@ ${config.intent === "charge" ? "- `src/services/thing-client.ts` — typed clien
 
 \`\`\`sh
 npx @zeroclickai/paywrap-cli check $PUBLIC_BASE_URL    # health + well-known
-npx @zeroclickai/paywrap-cli register                  # publish to Zero catalog
 \`\`\`
 
 ## Where the kit ends and your service begins
