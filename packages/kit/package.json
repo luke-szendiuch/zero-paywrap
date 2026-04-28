@@ -1,7 +1,7 @@
 {
 	"name": "@zeroclickai/paywrap",
-	"version": "0.0.10",
-	"description": "Primitives for building paid API services on-chain (MPP today, x402 later).",
+	"version": "0.0.11",
+	"description": "Framework-agnostic primitives for building agent-callable paid APIs over HTTP: MPP/x402 gates, pricing manifests, credential verification, and settlement logs.",
 	"type": "module",
 	"license": "MIT",
 	"repository": {
@@ -15,6 +15,7 @@
 	"publishConfig": { "access": "public" },
 	"exports": {
 		"./mpp": { "types": "./dist/mpp/index.d.ts", "import": "./dist/mpp/index.js" },
+		"./mpp/metered": { "types": "./dist/mpp/metered.d.ts", "import": "./dist/mpp/metered.js" },
 		"./x402": { "types": "./dist/x402/index.d.ts", "import": "./dist/x402/index.js" },
 		"./auth": { "types": "./dist/auth/index.d.ts", "import": "./dist/auth/index.js" },
 		"./signing": { "types": "./dist/signing/index.d.ts", "import": "./dist/signing/index.js" },

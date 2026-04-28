@@ -9,6 +9,7 @@ import {
 } from "@zeroclickai/paywrap/auth";
 import { type LoggerCallback, safeLog, shortFingerprint } from "@zeroclickai/paywrap/logger";
 import { type PaywrapMpp, verifyWithScope } from "@zeroclickai/paywrap/mpp";
+import { persistMeteredCloseVoucher } from "@zeroclickai/paywrap/mpp/metered";
 import type { Context, MiddlewareHandler } from "hono";
 import { formatUnits } from "viem";
 import type { Hex } from "viem";
@@ -169,18 +170,54 @@ export const mppMetered = (
 
 		// CLOSE-VOUCHER PATH ────────────────────────────────────────────────
 		// CLI replays the original POST URL with action="close" + cumulative
-		// = acceptedCumulative from the receipt. mppx.verifyCredential routes
-		// close credentials through `handleClose` internally, which:
-		//   1. validates voucher.cumulativeAmount >= channel.spent
-		//   2. validates > onChain.settled, <= onChain.deposit, signature
-		//   3. submits closeOnChain (settles at the close voucher's amount)
-		//   4. flips channel.finalized = true
-		// We MUST overwrite channel.spent to the metered actual BEFORE this
-		// path runs (see the post-handler block below for the voucher path),
-		// otherwise the auto-charge from the original voucher leaves spent
-		// at maxAmount and close fails with "must be >= spent".
+		// = acceptedCumulative from the receipt. Two-step settle for resilience
+		// against on-chain RPC failures:
+		//
+		//   1. PERSIST the close voucher to channel state (`paywrapCloseVoucher`)
+		//      via `persistMeteredCloseVoucher` BEFORE attempting on-chain
+		//      submission. Survives Worker restarts / RPC blips so a reaper
+		//      calling `closeSessionOnChain` can retry.
+		//   2. VERIFY via mppx (which also submits closeOnChain). On success
+		//      the channel is finalized in one round-trip; the persisted
+		//      voucher becomes redundant (already-finalized check skips it).
+		//      On RPC failure the persisted voucher is the recovery path.
+		//
+		// mppx's handleClose validates voucher.cumulativeAmount >= channel.spent.
+		// The post-handler block in this middleware overrides channel.spent to
+		// the metered actual after settle(); without that, mppx's auto-charge
+		// of request.amount=maxAmount would block sub-max closes.
 		const action = readCredentialAction(credential);
 		if (action === "close") {
+			const closePayload = credential.payload as {
+				channelId?: Hex;
+				cumulativeAmount?: string;
+				signature?: Hex;
+			};
+			if (closePayload.channelId && closePayload.cumulativeAmount && closePayload.signature) {
+				try {
+					await persistMeteredCloseVoucher(app.ctx.mppx, closePayload.channelId, {
+						channelId: closePayload.channelId,
+						cumulativeAmount: BigInt(closePayload.cumulativeAmount),
+						signature: closePayload.signature,
+					});
+				} catch (err) {
+					// Persistence failure is non-fatal — verify path still
+					// runs synchronously below. Logged so it shows up in audit.
+					await safeLog(logger, {
+						v: 1,
+						kind: "payment_failed",
+						timestamp: new Date().toISOString(),
+						protocol: "mpp",
+						stage: "settle",
+						reason:
+							err instanceof Error
+								? `metered_close_persist_failed:${err.message}`
+								: "metered_close_persist_failed",
+						scope: opts.scope,
+						route,
+					});
+				}
+			}
 			try {
 				await verifyWithScope(app.ctx.mppx, credential, opts.scope);
 			} catch (err) {

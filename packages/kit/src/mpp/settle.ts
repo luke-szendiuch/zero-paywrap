@@ -34,6 +34,12 @@ export type CloseSessionResult =
  *
  * Seller pays gas; with `feeToken: USDC` on `tempoChain` (see `./chain.ts`)
  * gas comes from the wallet's USDC, no native needed.
+ *
+ * ⚠️ Submits `state.highestVoucher` — for **metered** services (`mppMetered`
+ * adapter middleware) this is the buyer's max-authorized open voucher and
+ * would over-bill. If your service uses `mppMetered`, your reaper / cron /
+ * waitUntil hook should call `closeMeteredChannelFromState` from
+ * `@zeroclickai/paywrap/mpp/metered` instead.
  */
 export const closeSessionOnChain = async (
 	mpp: Pick<PaywrapMpp, "channelStore" | "client" | "account">,
