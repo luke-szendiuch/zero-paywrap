@@ -1,3 +1,4 @@
+import { decodePaymentSignatureHeader } from "@x402/core/http";
 import type { RouteConfig } from "@x402/core/server";
 import { x402HTTPResourceServer } from "@x402/core/server";
 
@@ -11,6 +12,22 @@ import { safeLog } from "@zeroclickai/paywrap/logger";
 import type { PaywrapX402 } from "@zeroclickai/paywrap/x402";
 import { x402NetworkId, x402UsdcAsset } from "@zeroclickai/paywrap/x402";
 import type { MiddlewareHandler } from "hono";
+import type { Hex } from "viem";
+
+/**
+ * Variables `x402Gated` sets on Hono's `c.var` so handlers can read the
+ * verified buyer wallet — mirrors `mppGated`'s `payer`. Augment your Hono
+ * Variables type to narrow the read:
+ *
+ *   const app = new Hono<{ Variables: PaywrapVariables & X402Variables }>();
+ *   app.post("/x", x402Gated(x402, { ... }), (c) => {
+ *     const buyer = c.var.x402Payer;  // typed Hex
+ *   });
+ */
+export type X402Variables = {
+	/** Verified buyer wallet for the current x402-paid request. */
+	x402Payer: Hex;
+};
 
 export type X402GatedOptions = {
 	/**
@@ -88,18 +105,36 @@ export const x402Gated = (x402: PaywrapX402, opts: X402GatedOptions): Middleware
 		opts.syncFacilitatorOnStart ?? true,
 	);
 	const logger = x402.logger;
-	if (!logger) return inner;
 
-	// Wrap to emit `payment_required` (when the inner middleware returns 402)
-	// and `request_completed` (latency + status). `payment_settled` /
-	// `payment_failed` come from the kit factory's hooks on `resourceServer`.
-	// Hono middleware contract: must return the inner Response when the inner
-	// middleware short-circuits, or just resolve when it called `next()` and
-	// the framework finalized the response.
+	// Wrap to:
+	//   1. Decode the buyer wallet from the request's payment-signature header
+	//      and set it on `c.var.x402Payer`. The decode happens before verify;
+	//      if verify rejects the credential the inner middleware short-circuits
+	//      with 402 and the handler never runs, so a handler reading
+	//      `c.var.x402Payer` always sees a verified address.
+	//   2. Emit `payment_required` when inner returns 402 and `request_completed`
+	//      regardless. `payment_settled` / `payment_failed` come from the kit
+	//      factory's hooks on `resourceServer`.
+	//
+	// Hono middleware contract: return the inner Response when it short-
+	// circuits; otherwise resolve to undefined so Hono finalizes the response
+	// the handler set on `c.res`.
 	return async (c, next) => {
 		const startedAt = Date.now();
 		const routeStr = `${c.req.method} ${c.req.path}`;
+		const sigHeader = c.req.header("payment-signature") ?? c.req.header("x-payment") ?? null;
+		if (sigHeader) {
+			try {
+				const payload = decodePaymentSignatureHeader(sigHeader);
+				const payer = (payload as { payload?: { authorization?: { from?: string } } }).payload
+					?.authorization?.from;
+				if (payer) c.set("x402Payer" as never, payer as Hex as never);
+			} catch {
+				// malformed header — let inner middleware reject during verify
+			}
+		}
 		const result = await inner(c, next);
+		if (!logger) return result;
 		const status = result instanceof Response ? result.status : c.res.status;
 		if (status === 402) {
 			await safeLog(logger, {
