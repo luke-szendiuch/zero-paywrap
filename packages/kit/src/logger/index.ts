@@ -117,3 +117,29 @@ export const safeLog = async (
  * dedup keys (see daytona's `defaultSandboxName`).
  */
 export const shortFingerprint = (digest: string): string => digest.slice(0, 16);
+
+/**
+ * Fan a single event out to multiple sinks. Each logger runs concurrently
+ * and is wrapped in try/catch so a flaky destination (Datadog 5xx, KV
+ * eviction, etc.) can't take down the rest. `safeLog` is already
+ * applied per-callsite by adapters, but composing also wraps so this is
+ * safe to use in any order.
+ *
+ * Usage:
+ *   const logger = composeLoggers([
+ *     consoleJsonLogger,                    // stdout
+ *     d1Logger(env.SETTLEMENTS_DB, ...),    // durable
+ *     datadogLogger(env.DD_API_KEY),        // dashboards
+ *   ]);
+ *   createPaywrapMpp({ ..., logger });
+ *
+ * Single-element arrays are returned as-is (no wrapping cost).
+ */
+export const composeLoggers = (loggers: LoggerCallback[]): LoggerCallback => {
+	if (loggers.length === 0) return async () => undefined;
+	const single = loggers[0];
+	if (loggers.length === 1 && single) return single;
+	return async (event: PaywrapLogEvent) => {
+		await Promise.all(loggers.map((l) => safeLog(l, event)));
+	};
+};

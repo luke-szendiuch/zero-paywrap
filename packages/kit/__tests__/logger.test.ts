@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	type LoggerCallback,
 	type PaywrapLogEvent,
+	composeLoggers,
 	consoleJsonLogger,
 	safeLog,
 	shortFingerprint,
@@ -139,6 +140,53 @@ describe("safeLog", () => {
 				reason: "x",
 			}),
 		).resolves.toBeUndefined();
+	});
+});
+
+describe("composeLoggers", () => {
+	const sampleEvent: PaywrapLogEvent = {
+		v: 1,
+		kind: "request_completed",
+		timestamp: "t",
+		route: "r",
+		status: 200,
+		latencyMs: 5,
+	};
+
+	it("returns a no-op for an empty array", async () => {
+		const composed = composeLoggers([]);
+		await expect(composed(sampleEvent)).resolves.toBeUndefined();
+	});
+
+	it("returns the single logger as-is (no wrapping cost)", () => {
+		const fn = vi.fn() as unknown as LoggerCallback;
+		expect(composeLoggers([fn])).toBe(fn);
+	});
+
+	it("fans an event out to every logger", async () => {
+		const a = vi.fn();
+		const b = vi.fn();
+		const c = vi.fn();
+		const composed = composeLoggers([a, b, c]);
+		await composed(sampleEvent);
+		expect(a).toHaveBeenCalledWith(sampleEvent);
+		expect(b).toHaveBeenCalledWith(sampleEvent);
+		expect(c).toHaveBeenCalledWith(sampleEvent);
+	});
+
+	it("isolates failures — one bad logger does not stop the others", async () => {
+		const ok1 = vi.fn();
+		const bad: LoggerCallback = () => {
+			throw new Error("sync boom");
+		};
+		const badAsync: LoggerCallback = async () => {
+			throw new Error("async boom");
+		};
+		const ok2 = vi.fn();
+		const composed = composeLoggers([ok1, bad, badAsync, ok2]);
+		await expect(composed(sampleEvent)).resolves.toBeUndefined();
+		expect(ok1).toHaveBeenCalledWith(sampleEvent);
+		expect(ok2).toHaveBeenCalledWith(sampleEvent);
 	});
 });
 
