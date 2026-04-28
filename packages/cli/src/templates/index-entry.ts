@@ -23,7 +23,7 @@ export const indexEntryTemplate = (config: ScaffoldConfig): string => {
 		imports.push(`import { resourceClient } from "./services/thing-client.js";`);
 	imports.push(`import { healthRoutes } from "./routes/health.js";`);
 	imports.push(`import { thingRoutes } from "./routes/things.js";`);
-	imports.push(`import { wellKnownRoutes } from "./routes/wellknown.js";`);
+	imports.push(`import { openApiRoutes, wellKnownRoutes } from "./routes/wellknown.js";`);
 	if (useRedis) {
 		imports.push(`import { makeQueues } from "./worker/queue.js";`);
 		imports.push(`import { type WorkerRuntime, startWorkerRuntime } from "./worker/start.js";`);
@@ -73,6 +73,9 @@ export const indexEntryTemplate = (config: ScaffoldConfig): string => {
 	const mount: string[] = [
 		`\tawait app.register(healthRoutes, { prefix: "/healthz" });`,
 		`\tawait app.register(wellKnownRoutes, { prefix: "/.well-known" });`,
+		// Indexers (Zero) require BOTH paywrap.json AND openapi.json — see
+		// docs in routes-wellknown.ts. openApiRoutes mounts at the root.
+		"\tawait app.register(openApiRoutes);",
 		`\tawait app.register(thingRoutes, { prefix: "/v1/things" });`,
 	];
 
