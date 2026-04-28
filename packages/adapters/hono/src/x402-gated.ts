@@ -93,11 +93,14 @@ export const x402Gated = (x402: PaywrapX402, opts: X402GatedOptions): Middleware
 	// Wrap to emit `payment_required` (when the inner middleware returns 402)
 	// and `request_completed` (latency + status). `payment_settled` /
 	// `payment_failed` come from the kit factory's hooks on `resourceServer`.
+	// Hono middleware contract: must return the inner Response when the inner
+	// middleware short-circuits, or just resolve when it called `next()` and
+	// the framework finalized the response.
 	return async (c, next) => {
 		const startedAt = Date.now();
 		const routeStr = `${c.req.method} ${c.req.path}`;
-		await inner(c, next);
-		const status = c.res.status;
+		const result = await inner(c, next);
+		const status = result instanceof Response ? result.status : c.res.status;
 		if (status === 402) {
 			await safeLog(logger, {
 				v: 1,
@@ -119,5 +122,6 @@ export const x402Gated = (x402: PaywrapX402, opts: X402GatedOptions): Middleware
 			status,
 			latencyMs: Date.now() - startedAt,
 		});
+		return result;
 	};
 };
