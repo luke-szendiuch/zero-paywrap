@@ -140,3 +140,52 @@ The `as never` cast pattern works for one-off prototypes (`c.set("foo" as never,
 ## Avoiding double-parsing in `preCheck`
 
 Hono's `c.req.json()` memoizes per request — calling it again from the handler returns the cached parse. Same for `c.req.formData()` etc. So a `preCheck` that needs to read the body can safely call `c.req.json()` without forcing the handler to re-parse.
+
+## Validate before charging
+
+For charge-intent routes, `mppGated` settles before your handler runs. Put cheap local validation in `preCheck` so callers are not charged for malformed JSON, unsupported options, name collisions, quota failures, or idempotent retries.
+
+```ts
+app.post(
+  "/v1/render",
+  mppGated({
+    scope: "render:v1",
+    intent: "charge",
+    amount: 1000n,
+    preCheck: async ({ c }) => {
+      const body = await c.req.json().catch(() => null);
+      if (!body || typeof body.diagram !== "string") {
+        return { ok: false, status: 400, body: { error: "invalid_body" } };
+      }
+      c.set("renderBody" as never, body as never);
+      return { ok: true };
+    },
+  }),
+  async (c) => {
+    const body = c.get("renderBody" as never) as { diagram: string };
+    return c.json({ diagram: body.diagram, payer: c.var.payer });
+  },
+);
+```
+
+`claimedPayer` in `preCheck` is only a pre-verify hint. Use it to choose what to read, not to commit irreversible writes.
+
+## Per-request pricing
+
+If price comes from Worker env or a route registry, build the gate in a tiny route middleware so the challenge amount matches runtime config and `/.well-known/paywrap.json`.
+
+```ts
+app.post(
+  "/v1/render",
+  async (c, next) => {
+    const gate = mppGated({
+      scope: "render:v1",
+      intent: "charge",
+      amount: BigInt(c.env.SKU_PRICE_USDC_MICRO),
+      meta: { sku: "render:v1", pricingVersion: "1" },
+    });
+    return gate(c as never, next);
+  },
+  async (c) => c.json({ ok: true }),
+);
+```

@@ -1,6 +1,6 @@
 # zero-paywrap
 
-Toolkit for building paid API services on-chain. v1 covers MPP (channel-based session/charge payments on Tempo). Designed so x402 support can slot in later without changing consumers.
+Toolkit for building agent-callable paid APIs over HTTP. Gate routes with MPP or x402, publish machine-readable pricing manifests, verify payment credentials, and emit structured settlement logs.
 
 ## Two ways in
 
@@ -13,7 +13,7 @@ The CLI is a separate package because it has scaffolder deps (`@clack/prompts`, 
 
 | Package | Purpose |
 |---|---|
-| `@zeroclickai/paywrap` | Core primitives — payment verification, signing, crypto, stores, manifest + health builders |
+| `@zeroclickai/paywrap` | Core primitives — payment verification, signing, crypto, stores, pricing manifest + health builders, settlement logging hooks |
 | `@zeroclickai/paywrap-adapter-fastify` | Optional Fastify adapter (`packages/adapters/fastify/`) — 402 challenge-reply helpers, credential extractor, preconfigured app factory |
 | `@zeroclickai/paywrap-adapter-hono` | Optional Hono adapter (`packages/adapters/hono/`) — runs on Cloudflare Workers, Node, Bun. See [Persistent state on Workers](./packages/adapters/hono/README.md#persistent-state-on-workers) for the KV-backed store. |
 | `@zeroclickai/paywrap-cli` (bin: `paywrap`) | Interactive setup CLI + day-2 ops commands |

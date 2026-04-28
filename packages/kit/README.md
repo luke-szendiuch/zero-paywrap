@@ -1,9 +1,9 @@
 # @zeroclickai/paywrap
 
-Framework-agnostic primitives for building **paid API services** that speak payment protocols over HTTP. The kit covers **MPP** (session + charge intents on Tempo, USDC settlement) and **x402** (Stripe-incubated facilitator-mediated USDC settlement on Base / Base Sepolia). Each protocol lives behind its own subpath — pick one or run both side-by-side per route.
+Framework-agnostic primitives for building **agent-callable paid APIs** over HTTP. Gate routes with **MPP** (session + charge intents on Tempo, USDC settlement) or **x402** (facilitator-mediated USDC settlement on Base / Base Sepolia), publish machine-readable pricing manifests, verify payment credentials, and emit structured settlement logs. Each protocol lives behind its own subpath — pick one or run both side-by-side per route.
 
 **Two ways in:**
-1. **Already have an API?** `pnpm add @zeroclickai/paywrap @zeroclickai/paywrap-adapter-fastify` — 10 lines of middleware to gate any route (see Path A below).
+1. **Already have an API?** `pnpm add @zeroclickai/paywrap @zeroclickai/paywrap-adapter-fastify` or `@zeroclickai/paywrap-adapter-hono` — 10 lines of middleware to gate any route (see Path A below).
 2. **Starting fresh?** `npx @zeroclickai/paywrap-cli create my-service` — interactive scaffold with routes, env schema, Dockerfile, optional DB + worker (see Path B below). Nothing to install up-front.
 
 The kit is intentionally narrow — everything here is runnable from any Node HTTP framework. For Fastify, layer [`@zeroclickai/paywrap-adapter-fastify`](../adapters/fastify/) on top; for Hono / Workers / Bun, use [`@zeroclickai/paywrap-adapter-hono`](../adapters/hono/). The CLI is a separate package so runtime services don't carry scaffolder deps.
@@ -90,6 +90,108 @@ curl -X POST "https://api.example.com/generate" \
 > `fetch(url, { headers: { authorization: await buildChargeCredential(...) } })`.
 > Do not wrap it in another `"Payment "`.
 
+### Path A2 — Drop-in to an existing Hono / Workers API
+
+*"I already have a Worker or Hono service and want route-level gates."*
+
+```bash
+pnpm add @zeroclickai/paywrap @zeroclickai/paywrap-adapter-hono
+```
+
+Workers bindings only exist per request, so build the paywrap ctx inside the `createHonoApp` factory:
+
+```ts
+import { createHonoApp, mppGated } from "@zeroclickai/paywrap-adapter-hono";
+import { buildPaywrapJson } from "@zeroclickai/paywrap/manifest";
+import { createPaywrapMpp, workersKvStore } from "@zeroclickai/paywrap/mpp";
+import { privateKeyToAccount } from "viem/accounts";
+
+type Env = {
+	PAYWRAP_KV: KVNamespace;
+	WALLET_PRIVATE_KEY: string;
+	MPP_SECRET_KEY: string;
+	PUBLIC_BASE_URL: string;
+	TEMPO_RPC_URL: string;
+	SKU_PRICE_USDC_MICRO: string;
+};
+
+const SKU = "diagram-render:v1";
+const PRICING_VERSION = 1;
+const SCOPE = `${SKU}:${PRICING_VERSION}`;
+
+const app = createHonoApp<{ Bindings: Env }>((c) => {
+	const mpp = createPaywrapMpp({
+		walletPrivateKey: c.env.WALLET_PRIVATE_KEY as `0x${string}`,
+		mppSecretKey: c.env.MPP_SECRET_KEY,
+		publicBaseUrl: c.env.PUBLIC_BASE_URL,
+		tempoRpcUrl: c.env.TEMPO_RPC_URL,
+		store: workersKvStore(c.env.PAYWRAP_KV),
+	});
+	const account = privateKeyToAccount(c.env.WALLET_PRIVATE_KEY as `0x${string}`);
+	return {
+		mppx: mpp.mppx,
+		mppxChannelStore: mpp.channelStore,
+		walletAddress: account.address,
+		priceUsdcMicro: BigInt(c.env.SKU_PRICE_USDC_MICRO),
+	};
+});
+
+app.get("/.well-known/paywrap.json", (c) => {
+	const ctx = c.get("paywrapApp").ctx;
+	return c.json(
+		buildPaywrapJson({
+			wallet: ctx.walletAddress,
+			paidRoutes: [
+				{
+					method: "POST",
+					path: "/v1/render",
+					protocol: "mpp",
+					sku: SKU,
+					priceUsdcMicro: ctx.priceUsdcMicro.toString(),
+					pricingVersion: PRICING_VERSION,
+					description: "Render a diagram and return SVG bytes.",
+					requestContentType: "application/json",
+					responseContentType: "image/svg+xml",
+				},
+			],
+			freeRoutes: [{ method: "GET", path: "/healthz" }],
+		}),
+	);
+});
+
+app.post(
+	"/v1/render",
+	async (c, next) => {
+		const ctx = c.get("paywrapApp").ctx;
+		const gate = mppGated({
+			scope: SCOPE,
+			intent: "charge",
+			amount: ctx.priceUsdcMicro,
+			meta: { sku: SKU, pricingVersion: String(PRICING_VERSION) },
+			preCheck: async ({ c }) => {
+				const body = await c.req.json().catch(() => null);
+				if (!body || typeof body.diagram !== "string") {
+					return { ok: false, status: 400, body: { error: "invalid_body" } };
+				}
+				c.set("renderBody" as never, body as never);
+				return { ok: true };
+			},
+		});
+		// Hono's middleware type can't see the extra paywrapApp binding here.
+		return gate(c as never, next);
+	},
+	async (c) => {
+		const body = c.get("renderBody" as never) as { diagram: string };
+		const result = await renderDiagram(body.diagram, c.var.payer);
+		return c.body(result.svg, 200, { "content-type": "image/svg+xml" });
+	},
+);
+
+export default { fetch: app.fetch };
+```
+
+This is the same route-level gate as Fastify, with Worker-safe state. Use `workersKvStore` for charge-intent replay protection; for Node/Bun services use `redisStore(...)` or the default in-memory store for local dev.
+
 ### Path B — Start from scratch with the CLI
 
 *"I don't have a service yet; I want the full scaffold."*
@@ -130,9 +232,94 @@ The kit ships **no root barrel** — import only the subpath you need. This keep
 | `@zeroclickai/paywrap/proxy` | `proxyUpstreamRequest`, `UpstreamProxyResponse` | Charge-intent services proxying an upstream API. Sniffs Content-Type and returns a discriminated `{kind: "json" \| "binary"}` so PNG/PDF endpoints don't get JSON-corrupted. |
 | `@zeroclickai/paywrap/logger` | `LoggerCallback`, `PaywrapLogEvent`, `consoleJsonLogger`, `safeLog`, `shortFingerprint` | Structured-event logging hook. Pass a `logger` to `createPaywrapMpp` / `createPaywrapX402` and adapters emit `payment_required`, `payment_settled`, `payment_failed`, and `request_completed`. Sink-agnostic — see "Observability" below. |
 
+## Service discovery manifest
+
+Agents and indexers discover paid routes through `/.well-known/paywrap.json`. `buildPaywrapJson` is intentionally small and typed: pass the seller wallet, paid routes, and free routes; serve the result as JSON.
+
+```ts
+import { buildPaywrapJson } from "@zeroclickai/paywrap/manifest";
+
+app.get("/.well-known/paywrap.json", async () =>
+	buildPaywrapJson({
+		wallet: "0xSellerSettlementAddress",
+		paidRoutes: [
+			{
+				method: "POST",
+				path: "/v1/render",
+				protocol: "mpp",
+				sku: "mermaid-render:v1",
+				priceUsdcMicro: "1000",
+				pricingVersion: 1,
+				description: "Render Mermaid diagram text to SVG, PNG, JPEG, WebP, or PDF bytes.",
+				requestContentType: "application/json",
+				responseContentType: "image/svg+xml",
+			},
+		],
+		freeRoutes: [
+			{ method: "GET", path: "/healthz", description: "Liveness check." },
+		],
+	}),
+);
+```
+
+`sku` is seller-defined and should change when the priced unit changes. `pricingVersion` lets buyers bind a credential to a specific price contract without encoding every version detail into the path. Set `requestContentType` and `responseContentType` for binary or non-JSON routes so agents do not guess wrong.
+
+## Validate before charging
+
+For charge-intent routes, `mppGated` verifies and settles before your handler runs. Use `preCheck` for business validation that must happen before the buyer pays: malformed JSON, name collisions, unsupported enum values, quota checks, idempotent retries, and other cheap local checks.
+
+```ts
+app.post(
+	"/v1/things",
+	mppGated({
+		scope: "thing-create:v1",
+		intent: "charge",
+		amount: 50_000n,
+		preCheck: async ({ c, claimedPayer }) => {
+			const body = await c.req.json().catch(() => null);
+			if (!body || typeof body.name !== "string") {
+				return { ok: false, status: 400, body: { error: "invalid_body" } };
+			}
+			if (await nameAlreadyExists(body.name, claimedPayer)) {
+				return { ok: false, status: 409, body: { error: "name_taken" } };
+			}
+			c.set("thingInput" as never, body as never);
+			return { ok: true };
+		},
+	}),
+	async (c) => {
+		const body = c.get("thingInput" as never);
+		return c.json(await createThing(body, c.var.payer), 201);
+	},
+);
+```
+
+`claimedPayer` is only a hint extracted before verification. Use it for reads and routing decisions, never for irreversible writes. The adapter emits `payment_failed` with `stage: "precheck"` if your pre-check throws.
+
+### Dynamic pricing
+
+If price comes from env, tenant config, or a route table, build the gate inside a small middleware so the `amount` in the challenge matches the manifest and runtime config.
+
+```ts
+app.post(
+	"/v1/render",
+	async (c, next) => {
+		const price = BigInt(c.env.SKU_PRICE_USDC_MICRO);
+		const gate = mppGated({
+			scope: "render:v1",
+			intent: "charge",
+			amount: price,
+			meta: { sku: "render:v1", pricingVersion: "1" },
+		});
+		return gate(c as never, next);
+	},
+	async (c) => c.json({ ok: true }),
+);
+```
+
 ### Refund-eligible failures: just log this shape
 
-When charge-intent settles and the upstream call fails (5xx, validation error, etc.), the buyer paid for nothing. Refunds happen out-of-band by an operator script. The kit doesn't ship a wrapper — just emit one JSON line per failure with this shape, on `console.error`:
+When charge-intent settles and the upstream call fails, the buyer paid for nothing. Refunds happen out-of-band by an operator script. The kit doesn't ship a wrapper — just emit one JSON line per failure with this shape, on `console.error`:
 
 ```ts
 console.error(JSON.stringify({
@@ -148,6 +335,10 @@ console.error(JSON.stringify({
 ```
 
 Standard shape across services means one operator grep handles every paywrap deployment.
+
+Use this for post-settlement failures you would not intentionally bill for: upstream 5xx, upstream rate limits, network timeouts, worker crashes after settlement, and validation you could only do after the paid side effect began. Do not log refunds for `preCheck` rejections because those happen before settlement. For upstream/user 4xx, decide per product: if the user paid for validation or linting, return the 4xx as the paid result; if the upstream rejected a request your service should have caught before settlement, log the refund event.
+
+Include `chargeHash` or a credential fingerprint when your route already computes one for idempotency. Never log the raw `Payment ...` header.
 
 ## Observability
 
@@ -276,4 +467,5 @@ HMAC-bound challenge ids + scope enforcement are load-bearing: the kit enforces 
 ## Related packages
 
 - [`@zeroclickai/paywrap-adapter-fastify`](../adapters/fastify/) — Fastify adapter: `app.mppGated(...)`, `sendSessionChallenge`, `sendChargeChallenge`, `sendProofChallenge`, `extractCredential`, `createFastifyApp`.
+- [`@zeroclickai/paywrap-adapter-hono`](../adapters/hono/) — Hono / Workers / Bun adapter: `createHonoApp(...)`, `mppGated(...)`, `x402Gated(...)`, challenge helpers, Worker KV state examples.
 - [`@zeroclickai/paywrap-cli`](../cli/) (bin: `paywrap`) — interactive scaffolder (`paywrap create`), wallet generator, service publisher.
