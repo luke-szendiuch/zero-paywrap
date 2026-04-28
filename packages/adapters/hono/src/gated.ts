@@ -3,8 +3,10 @@ import {
 	type VerifiedCredential,
 	claimedPayerFromRawCredential,
 	extractCredential,
+	fingerprintCredential,
 	payerFromCredential,
 } from "@zeroclickai/paywrap/auth";
+import { type LoggerCallback, safeLog, shortFingerprint } from "@zeroclickai/paywrap/logger";
 import { type PaywrapMpp, verifyWithScope } from "@zeroclickai/paywrap/mpp";
 import type { Context, MiddlewareHandler } from "hono";
 import { formatUnits } from "viem";
@@ -62,6 +64,7 @@ type AppLike = {
 	ctx: {
 		mppx: PaywrapMpp["mppx"];
 		mppxChannelStore: PaywrapMpp["channelStore"];
+		paywrapLogger?: LoggerCallback;
 	};
 };
 
@@ -133,9 +136,23 @@ export const mppGated = (
 
 	return async (c, next) => {
 		const gatedApp = resolveApp(c);
+		const logger = gatedApp.ctx.paywrapLogger;
+		const route = `${c.req.method} ${c.req.path}`;
+		const startedAt = Date.now();
 		const header = c.req.header("authorization") ?? c.req.header("payment") ?? undefined;
 		const credential = extractCredential(header);
 		if (!credential) {
+			await safeLog(logger, {
+				v: 1,
+				kind: "payment_required",
+				timestamp: new Date().toISOString(),
+				protocol: "mpp",
+				route,
+				scope: opts.scope,
+				intent,
+				...(opts.amount !== undefined ? { amountUsdcMicro: opts.amount.toString() } : {}),
+				...(opts.meta ? { meta: opts.meta } : {}),
+			});
 			return sendChallengeForIntent(gatedApp, c, intent, opts, opts.detail ?? defaultDetail);
 		}
 
@@ -157,7 +174,17 @@ export const mppGated = (
 					claimedPayer,
 					c,
 				});
-			} catch {
+			} catch (err) {
+				await safeLog(logger, {
+					v: 1,
+					kind: "payment_failed",
+					timestamp: new Date().toISOString(),
+					protocol: "mpp",
+					stage: "precheck",
+					reason: err instanceof Error ? err.message : "precheck_failed",
+					scope: opts.scope,
+					route,
+				});
 				// biome-ignore lint/suspicious/noExplicitAny: see challenges.ts
 				return c.json({ error: "precheck_failed" } as any, 500 as any);
 			}
@@ -179,11 +206,31 @@ export const mppGated = (
 			verified = await verifyWithScope(gatedApp.ctx.mppx, credential, opts.scope);
 		} catch (err) {
 			const detail = err instanceof Error ? err.message : "verify_failed";
+			await safeLog(logger, {
+				v: 1,
+				kind: "payment_failed",
+				timestamp: new Date().toISOString(),
+				protocol: "mpp",
+				stage: "verify",
+				reason: detail,
+				scope: opts.scope,
+				route,
+			});
 			return sendChallengeForIntent(gatedApp, c, intent, opts, detail);
 		}
 
 		const payer = await payerFromCredential(gatedApp.ctx.mppxChannelStore, verified);
 		if (!payer) {
+			await safeLog(logger, {
+				v: 1,
+				kind: "payment_failed",
+				timestamp: new Date().toISOString(),
+				protocol: "mpp",
+				stage: "verify",
+				reason: "channel_state_missing_after_verify",
+				scope: opts.scope,
+				route,
+			});
 			return sendChallengeForIntent(
 				gatedApp,
 				c,
@@ -193,9 +240,38 @@ export const mppGated = (
 			);
 		}
 
+		// Emit settled event for paid intents (charge/session). `proof` is auth-only,
+		// no money moves, so we skip the money-log for that intent.
+		if (logger && (intent === "charge" || intent === "session") && opts.amount !== undefined) {
+			const fp = shortFingerprint(await fingerprintCredential(header ?? ""));
+			await safeLog(logger, {
+				v: 1,
+				kind: "payment_settled",
+				timestamp: new Date().toISOString(),
+				protocol: "mpp",
+				payer,
+				seller: gatedApp.ctx.mppx?.account?.address ?? ("0x" as Hex),
+				amountUsdcMicro: opts.amount.toString(),
+				route,
+				scope: opts.scope,
+				...(opts.meta?.sku ? { sku: opts.meta.sku } : {}),
+				latencyMs: Date.now() - startedAt,
+				credentialFingerprint: fp,
+			});
+		}
+
 		c.set("payer", payer);
 		c.set("verifiedCredential", verified);
 		await next();
+		await safeLog(logger, {
+			v: 1,
+			kind: "request_completed",
+			timestamp: new Date().toISOString(),
+			route,
+			status: c.res.status,
+			latencyMs: Date.now() - startedAt,
+			payer,
+		});
 	};
 };
 

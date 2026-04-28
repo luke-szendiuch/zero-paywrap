@@ -1,3 +1,4 @@
+import type { LoggerCallback } from "@zeroclickai/paywrap/logger";
 import type { PaywrapMpp } from "@zeroclickai/paywrap/mpp";
 import { type Context, Hono } from "hono";
 import type { PaywrapVariables } from "./gated.js";
@@ -6,10 +7,15 @@ import type { PaywrapVariables } from "./gated.js";
  * AppContext base. Consumers parameterize `T` with their full context. Unlike
  * the fastify adapter we do NOT require a `logger` — Hono has no built-in
  * logger and Workers consumers typically log via `console`.
+ *
+ * `paywrapLogger` is optional structured-event logging consumed by
+ * `mppGated` / `x402Gated` middlewares. Wire it via `createPaywrapMpp({logger})`
+ * or `createPaywrapX402({logger})` and surface it on this context.
  */
 export type AppContextBase = {
 	mppx: PaywrapMpp["mppx"];
 	mppxChannelStore: PaywrapMpp["channelStore"];
+	paywrapLogger?: LoggerCallback;
 };
 
 /** Variables the `mppGated` middleware reads off each request. */

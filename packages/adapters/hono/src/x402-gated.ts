@@ -7,6 +7,7 @@ type PaymentOption = NonNullable<RouteConfig["accepts"]> extends infer A
 		: A
 	: never;
 import { paymentMiddlewareFromHTTPServer } from "@x402/hono";
+import { safeLog } from "@zeroclickai/paywrap/logger";
 import type { PaywrapX402 } from "@zeroclickai/paywrap/x402";
 import { x402NetworkId, x402UsdcAsset } from "@zeroclickai/paywrap/x402";
 import type { MiddlewareHandler } from "hono";
@@ -80,10 +81,43 @@ export const x402Gated = (x402: PaywrapX402, opts: X402GatedOptions): Middleware
 	};
 
 	const httpServer = new x402HTTPResourceServer(x402.resourceServer, route);
-	return paymentMiddlewareFromHTTPServer(
+	const inner = paymentMiddlewareFromHTTPServer(
 		httpServer,
 		undefined,
 		undefined,
 		opts.syncFacilitatorOnStart ?? true,
 	);
+	const logger = x402.logger;
+	if (!logger) return inner;
+
+	// Wrap to emit `payment_required` (when the inner middleware returns 402)
+	// and `request_completed` (latency + status). `payment_settled` /
+	// `payment_failed` come from the kit factory's hooks on `resourceServer`.
+	return async (c, next) => {
+		const startedAt = Date.now();
+		const routeStr = `${c.req.method} ${c.req.path}`;
+		await inner(c, next);
+		const status = c.res.status;
+		if (status === 402) {
+			await safeLog(logger, {
+				v: 1,
+				kind: "payment_required",
+				timestamp: new Date().toISOString(),
+				protocol: "x402",
+				route: routeStr,
+				scope: opts.description ?? routeStr,
+				...(typeof opts.price === "string" || typeof opts.price === "number"
+					? { amountUsdcMicro: String(opts.price) }
+					: {}),
+			});
+		}
+		await safeLog(logger, {
+			v: 1,
+			kind: "request_completed",
+			timestamp: new Date().toISOString(),
+			route: routeStr,
+			status,
+			latencyMs: Date.now() - startedAt,
+		});
+	};
 };

@@ -1,6 +1,6 @@
 {
 	"name": "@zeroclickai/paywrap",
-	"version": "0.0.4",
+	"version": "0.0.5",
 	"description": "Primitives for building paid API services on-chain (MPP today, x402 later).",
 	"type": "module",
 	"license": "MIT",
@@ -23,7 +23,8 @@
 		"./manifest": { "types": "./dist/manifest/index.d.ts", "import": "./dist/manifest/index.js" },
 		"./health": { "types": "./dist/health/index.d.ts", "import": "./dist/health/index.js" },
 		"./setup": { "types": "./dist/setup/index.d.ts", "import": "./dist/setup/index.js" },
-		"./proxy": { "types": "./dist/proxy/index.d.ts", "import": "./dist/proxy/index.js" }
+		"./proxy": { "types": "./dist/proxy/index.d.ts", "import": "./dist/proxy/index.js" },
+		"./logger": { "types": "./dist/logger/index.d.ts", "import": "./dist/logger/index.js" }
 	},
 	"files": ["dist", "README.md"],
 	"scripts": {

@@ -128,6 +128,7 @@ The kit ships **no root barrel** — import only the subpath you need. This keep
 | `@zeroclickai/paywrap/health` | `aggregateHealthProbes` | Assembling `/healthz` responses from per-subsystem probes. |
 | `@zeroclickai/paywrap/setup` | `generateWallet`, `generateMppSecretKey`, `prefundWallet` | One-shot setup scripts the CLI wraps; callable from a consumer's own `pnpm setup`. |
 | `@zeroclickai/paywrap/proxy` | `proxyUpstreamRequest`, `UpstreamProxyResponse` | Charge-intent services proxying an upstream API. Sniffs Content-Type and returns a discriminated `{kind: "json" \| "binary"}` so PNG/PDF endpoints don't get JSON-corrupted. |
+| `@zeroclickai/paywrap/logger` | `LoggerCallback`, `PaywrapLogEvent`, `consoleJsonLogger`, `safeLog`, `shortFingerprint` | Structured-event logging hook. Pass a `logger` to `createPaywrapMpp` / `createPaywrapX402` and adapters emit `payment_required`, `payment_settled`, `payment_failed`, and `request_completed`. Sink-agnostic — see "Observability" below. |
 
 ### Refund-eligible failures: just log this shape
 
@@ -147,6 +148,93 @@ console.error(JSON.stringify({
 ```
 
 Standard shape across services means one operator grep handles every paywrap deployment.
+
+## Observability
+
+Pass a `logger` to either factory and the kit emits structured events at every interesting moment of a paid request — `payment_required`, `payment_settled`, `payment_failed`, `request_completed`. The kit is sink-agnostic: pick a destination that fits your runtime.
+
+### Default: stdout JSON
+
+```ts
+import { createPaywrapMpp } from "@zeroclickai/paywrap/mpp";
+import { consoleJsonLogger } from "@zeroclickai/paywrap/logger";
+
+const mpp = createPaywrapMpp({
+  walletPrivateKey: env.WALLET_PRIVATE_KEY,
+  publicBaseUrl: env.PUBLIC_BASE_URL,
+  mppSecretKey: env.MPP_SECRET_KEY,
+  tempoRpcUrl: env.TEMPO_RPC_URL,
+  logger: consoleJsonLogger, // ← one JSON line per event on stdout
+});
+```
+
+This works everywhere `console.log` does — captured by `wrangler tail` (Workers), Render's log viewer, `journalctl`, etc.
+
+### Cloudflare Workers + Analytics Engine
+
+```ts
+import { createPaywrapX402 } from "@zeroclickai/paywrap/x402";
+import type { LoggerCallback } from "@zeroclickai/paywrap/logger";
+
+const aeLogger: LoggerCallback = (event) => {
+  c.env.PAYMENTS_AE.writeDataPoint({
+    indexes: [event.kind === "payment_settled" ? event.payer : ""],
+    blobs: [event.kind, event.protocol ?? "", JSON.stringify(event)],
+    doubles: [
+      event.kind === "payment_settled" ? Number(event.amountUsdcMicro) / 1e6 : 0,
+      event.kind === "request_completed" ? event.latencyMs : 0,
+    ],
+  });
+};
+
+const x402 = createPaywrapX402({ payTo, network: "base", logger: aeLogger });
+```
+
+Workers Analytics Engine is free up to 25M data points/month and queryable via the Workers Analytics SQL API.
+
+### Render / Node + Datadog
+
+```ts
+import type { LoggerCallback } from "@zeroclickai/paywrap/logger";
+
+const ddLogger: LoggerCallback = async (event) => {
+  // Don't await this in the hot path — fire-and-forget on Workers, or
+  // wrap with `c.executionCtx.waitUntil(...)` if you need delivery
+  // guarantees.
+  fetch("https://http-intake.logs.datadoghq.com/api/v2/logs", {
+    method: "POST",
+    headers: { "DD-API-KEY": process.env.DD_API_KEY!, "Content-Type": "application/json" },
+    body: JSON.stringify({ ...event, ddsource: "paywrap", service: "my-service" }),
+  }).catch(() => {});
+};
+```
+
+For Render specifically, `consoleJsonLogger` plus a configured **Log Stream** in the Render dashboard forwards everything to Logtail / Datadog / Papertrail without code changes.
+
+### What's in each event
+
+```ts
+type PaywrapLogEvent =
+  | { v: 1; kind: "payment_required"; protocol: "mpp" | "x402"; route, scope, intent?, amountUsdcMicro?, meta? }
+  | { v: 1; kind: "payment_settled";  protocol: "mpp" | "x402"; payer, seller, amountUsdcMicro, route, scope?, sku?, latencyMs, txHash?, network?, sessionId?, credentialFingerprint? }
+  | { v: 1; kind: "payment_failed";   protocol: "mpp" | "x402"; stage: "verify" | "settle" | "precheck" | "unknown"; reason, scope?, route? }
+  | { v: 1; kind: "request_completed"; route, status, latencyMs, payer? };
+```
+
+Schema is versioned (`v: 1`) so dashboards can pin to a known shape.
+
+### Privacy invariants enforced by the kit
+
+- The raw `Payment …` Authorization header **never** appears in any event. Only the first 16 hex chars of `fingerprintCredential(rawHeader)` are surfaced (as `credentialFingerprint`).
+- No private keys, no signatures. Payer addresses are public on-chain so they're fine to log.
+
+### Logger errors are never your problem
+
+Adapters call your logger through `safeLog`, which swallows synchronous throws and async rejections. A flaky sink (Datadog 5xx, network blip) cannot break a paid call. If your logger silently no-ops, the kit logs nothing — but the request still settles correctly.
+
+### x402 settle events come "for free"
+
+For x402, the kit registers `onAfterSettle` / `onSettleFailure` hooks on the underlying `x402ResourceServer` inside `createPaywrapX402`. That means `payment_settled` events include the on-chain `txHash` and verified `payer` address from the facilitator response — no glue code needed in your service.
 
 ## Manual route pattern (when you can't use `mppGated`)
 

@@ -2,6 +2,7 @@ import { Mppx, tempo } from "mppx/server";
 import { Session } from "mppx/tempo";
 import { http, createWalletClient } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
+import type { LoggerCallback } from "../logger/index.js";
 import { tempoChain } from "./chain.js";
 import { TEMPO_ESCROW, TEMPO_USDC, USDC_DECIMALS } from "./constants.js";
 import { memoryStore, redisStore } from "./stores.js";
@@ -35,6 +36,14 @@ export type CreateMppxConfig = {
 	 * `Number.POSITIVE_INFINITY` to verify against seeded state only.
 	 */
 	channelStateTtl?: number;
+	/**
+	 * Optional structured-event logger. Adapters (`mppGated`) emit
+	 * `payment_required`, `payment_settled`, `payment_failed`, and
+	 * `request_completed` events through this callback. Sink-agnostic
+	 * — see `@zeroclickai/paywrap/logger` for the event taxonomy and
+	 * the `consoleJsonLogger` default.
+	 */
+	logger?: LoggerCallback;
 };
 
 let warnedDefaultStore = false;
@@ -80,6 +89,8 @@ export type PaywrapMpp = {
 	channelStore: ReturnType<typeof Session.ChannelStore.fromStore>;
 	account: ReturnType<typeof privateKeyToAccount>;
 	client: ReturnType<typeof createWalletClient>;
+	/** Optional logger configured at factory time; adapters consume this. */
+	logger?: LoggerCallback;
 };
 
 /**
@@ -130,5 +141,11 @@ export const createPaywrapMpp = (config: CreateMppxConfig): PaywrapMpp => {
 
 	const channelStore = Session.ChannelStore.fromStore(store);
 
-	return { mppx, channelStore, account, client };
+	return {
+		mppx,
+		channelStore,
+		account,
+		client,
+		...(config.logger ? { logger: config.logger } : {}),
+	};
 };

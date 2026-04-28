@@ -71,6 +71,71 @@ describe("mppGated — missing / invalid credential", () => {
 	});
 });
 
+describe("mppGated — logger hook", () => {
+	const makeAppWithLogger = () => {
+		const events: Array<{ kind: string }> = [];
+		const logger = vi.fn(async (e) => {
+			events.push(e);
+		});
+		const mpp = createPaywrapMpp({
+			walletPrivateKey: KNOWN_PK,
+			publicBaseUrl: `https://${REALM}`,
+			mppSecretKey: SECRET_KEY,
+			tempoRpcUrl: "https://rpc.example/tempo",
+			store: memoryStore(),
+			channelStateTtl: Number.POSITIVE_INFINITY,
+			logger,
+		});
+		const ctx = {
+			mppx: mpp.mppx,
+			mppxChannelStore: mpp.channelStore,
+			paywrapLogger: mpp.logger,
+		};
+		const app = createHonoApp(ctx);
+		return { app, events, logger };
+	};
+
+	it("emits payment_required on missing credential", async () => {
+		const { app, events } = makeAppWithLogger();
+		app.post("/paid", mppGated({ scope: "x:1", amount: 50_000n }), (c) => c.json({ ok: true }));
+		await app.request("/paid", { method: "POST" });
+		const required = events.find((e) => e.kind === "payment_required");
+		expect(required).toBeDefined();
+		expect(required).toMatchObject({
+			v: 1,
+			kind: "payment_required",
+			protocol: "mpp",
+			scope: "x:1",
+			amountUsdcMicro: "50000",
+			intent: "session",
+		});
+	});
+
+	it("emits payment_required when an unparseable credential is sent", async () => {
+		// `Payment garbage` fails Credential.deserialize → treated as no
+		// credential → payment_required, not payment_failed. Verify-stage
+		// errors require a parseable-but-invalid credential which is
+		// covered in the seeded-channel tests below.
+		const { app, events } = makeAppWithLogger();
+		app.post("/paid", mppGated({ scope: "x:1", amount: 50_000n }), (c) => c.json({ ok: true }));
+		await app.request("/paid", {
+			method: "POST",
+			headers: { authorization: "Payment garbage" },
+		});
+		expect(events.some((e) => e.kind === "payment_required")).toBe(true);
+	});
+
+	it("never includes the raw Payment header in any emitted event", async () => {
+		const { app, events } = makeAppWithLogger();
+		app.post("/paid", mppGated({ scope: "x:1", amount: 50_000n }), (c) => c.json({ ok: true }));
+		const secret = "Payment THIS_SHOULD_NEVER_LEAK_INTO_LOGS";
+		await app.request("/paid", { method: "POST", headers: { authorization: secret } });
+		for (const e of events) {
+			expect(JSON.stringify(e)).not.toContain("THIS_SHOULD_NEVER_LEAK_INTO_LOGS");
+		}
+	});
+});
+
 describe("mppGated — valid credentials", () => {
 	const seedAndBuild = async (
 		mpp: ReturnType<typeof createPaywrapMpp>,

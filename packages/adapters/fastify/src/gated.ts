@@ -2,8 +2,10 @@ import {
 	type RawCredential,
 	type VerifiedCredential,
 	claimedPayerFromRawCredential,
+	fingerprintCredential,
 	payerFromCredential,
 } from "@zeroclickai/paywrap/auth";
+import { type LoggerCallback, safeLog, shortFingerprint } from "@zeroclickai/paywrap/logger";
 import { type PaywrapMpp, verifyWithScope } from "@zeroclickai/paywrap/mpp";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { formatUnits } from "viem";
@@ -92,6 +94,7 @@ type AppLike = {
 	ctx: {
 		mppx: PaywrapMpp["mppx"];
 		mppxChannelStore: PaywrapMpp["channelStore"];
+		paywrapLogger?: LoggerCallback;
 	};
 };
 
@@ -159,9 +162,23 @@ export const registerMppGated = (app: FastifyInstance) => {
 
 		return async (req, reply) => {
 			const gatedApp = { ctx: (req.server as unknown as AppLike).ctx };
+			const logger = gatedApp.ctx.paywrapLogger;
+			const route = `${req.method} ${req.routeOptions?.url ?? req.url}`;
+			const startedAt = Date.now();
 			const header = (req.headers.authorization ?? req.headers.payment) as string | undefined;
 			const credential = extractCredential(header) as RawCredential | null;
 			if (!credential) {
+				await safeLog(logger, {
+					v: 1,
+					kind: "payment_required",
+					timestamp: new Date().toISOString(),
+					protocol: "mpp",
+					route,
+					scope: opts.scope,
+					intent,
+					...(opts.amount !== undefined ? { amountUsdcMicro: opts.amount.toString() } : {}),
+					...(opts.meta ? { meta: opts.meta } : {}),
+				});
 				await sendChallengeForIntent(gatedApp, reply, intent, opts, opts.detail ?? defaultDetail);
 				return;
 			}
@@ -190,6 +207,16 @@ export const registerMppGated = (app: FastifyInstance) => {
 						{ err: err instanceof Error ? err.message : String(err) },
 						"paywrap/mppGated: preCheck threw — responding 500",
 					);
+					await safeLog(logger, {
+						v: 1,
+						kind: "payment_failed",
+						timestamp: new Date().toISOString(),
+						protocol: "mpp",
+						stage: "precheck",
+						reason: err instanceof Error ? err.message : "precheck_failed",
+						scope: opts.scope,
+						route,
+					});
 					await reply.status(500).send({ error: "precheck_failed" });
 					return;
 				}
@@ -210,6 +237,16 @@ export const registerMppGated = (app: FastifyInstance) => {
 				verified = await verifyWithScope(gatedApp.ctx.mppx, credential, opts.scope);
 			} catch (err) {
 				const detail = err instanceof Error ? err.message : "verify_failed";
+				await safeLog(logger, {
+					v: 1,
+					kind: "payment_failed",
+					timestamp: new Date().toISOString(),
+					protocol: "mpp",
+					stage: "verify",
+					reason: detail,
+					scope: opts.scope,
+					route,
+				});
 				await sendChallengeForIntent(gatedApp, reply, intent, opts, detail);
 				return;
 			}
@@ -219,6 +256,16 @@ export const registerMppGated = (app: FastifyInstance) => {
 				// Verified credential with no resolvable payer — channel row
 				// disappeared between verify and store read. Re-challenge
 				// rather than 500; client can retry.
+				await safeLog(logger, {
+					v: 1,
+					kind: "payment_failed",
+					timestamp: new Date().toISOString(),
+					protocol: "mpp",
+					stage: "verify",
+					reason: "channel_state_missing_after_verify",
+					scope: opts.scope,
+					route,
+				});
 				await sendChallengeForIntent(
 					gatedApp,
 					reply,
@@ -227,6 +274,24 @@ export const registerMppGated = (app: FastifyInstance) => {
 					"channel_state_missing_after_verify",
 				);
 				return;
+			}
+
+			if (logger && (intent === "charge" || intent === "session") && opts.amount !== undefined) {
+				const fp = shortFingerprint(await fingerprintCredential(header ?? ""));
+				await safeLog(logger, {
+					v: 1,
+					kind: "payment_settled",
+					timestamp: new Date().toISOString(),
+					protocol: "mpp",
+					payer,
+					seller: gatedApp.ctx.mppx?.account?.address ?? ("0x" as Hex),
+					amountUsdcMicro: opts.amount.toString(),
+					route,
+					scope: opts.scope,
+					...(opts.meta?.sku ? { sku: opts.meta.sku } : {}),
+					latencyMs: Date.now() - startedAt,
+					credentialFingerprint: fp,
+				});
 			}
 
 			req.payer = payer;
