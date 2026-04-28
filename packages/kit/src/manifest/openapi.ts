@@ -12,8 +12,11 @@ import type { FreeRoute, PaidRoute, PaywrapManifest } from "./index.js";
  *   - OpenAPI 3.0.3
  *   - One path entry per paid route, one per free route
  *   - Operation summary = route.description (if present)
- *   - For paid routes, `extensions.x-paywrap` carries protocol + sku + price
- *     (preserved as `x-` so OpenAPI validators don't choke)
+ *   - For paid routes, `x-payment-info` per operation matches the upstream
+ *     mppx discovery convention (`mppx/dist/discovery/OpenApi.js`). Indexers
+ *     that read mppx's published OpenAPI extension auto-pick up our pricing
+ *     without paywrap-specific knowledge. Shape: `{intent, method, currency,
+ *     amount, sku?, pricingVersion?}`.
  *   - 200 default response with empty schema
  *   - 402 response on paid routes referencing a shared `PaymentRequired` schema
  */
@@ -38,6 +41,23 @@ type OpenApiSpec = {
 
 const VALID_VERBS = new Set(["get", "post", "put", "patch", "delete", "head", "options"]);
 
+const USDC_DECIMALS = 6;
+
+/**
+ * Convert atomic micro-USDC ("50000") to decimal USD string ("0.05") to
+ * match upstream mppx discovery convention. mppx's
+ * `paymentInfoFromCanonical` ships seller-declared `amount` as the
+ * already-decimal string (e.g. "0.05"); paywrap callers pass atomic units
+ * for type-safety, so we convert here at the boundary.
+ */
+const microsToDecimalUsd = (micros: string): string => {
+	const n = BigInt(micros);
+	const whole = n / 10n ** BigInt(USDC_DECIMALS);
+	const frac = (n % 10n ** BigInt(USDC_DECIMALS)).toString().padStart(USDC_DECIMALS, "0");
+	const trimmed = frac.replace(/0+$/, "");
+	return trimmed ? `${whole}.${trimmed}` : whole.toString();
+};
+
 const normalizeVerb = (method: string): string => {
 	const lower = method.toLowerCase();
 	if (!VALID_VERBS.has(lower)) {
@@ -59,12 +79,19 @@ const toPathOperation = (route: PaidRoute | FreeRoute, paid: boolean): Record<st
 	};
 	if (paid) {
 		responses["402"] = { $ref: "#/components/schemas/PaymentRequired" };
-		op["x-paywrap"] = {
-			protocol: (route as PaidRoute).protocol,
-			sku: (route as PaidRoute).sku,
-			priceUsdcMicro: (route as PaidRoute).priceUsdcMicro,
-			pricingVersion: (route as PaidRoute).pricingVersion,
-			...((route as PaidRoute).wallet ? { wallet: (route as PaidRoute).wallet } : {}),
+		const paid_ = route as PaidRoute;
+		// Upstream-standard mppx-style discovery extension. Naming + shape
+		// chosen to match `mppx/dist/discovery/OpenApi.js`. `amount` is the
+		// human-decimal USD string; `currency` is the asset name. SKU and
+		// version are preserved for paywrap-aware consumers but indexers
+		// not familiar with mppx fields ignore them.
+		op["x-payment-info"] = {
+			method: paid_.protocol === "mpp" ? "tempo" : paid_.protocol,
+			currency: "USDC",
+			amount: microsToDecimalUsd(paid_.priceUsdcMicro),
+			sku: paid_.sku,
+			pricingVersion: paid_.pricingVersion,
+			...(paid_.wallet ? { wallet: paid_.wallet } : {}),
 		};
 	}
 	if (route.requestContentType) {

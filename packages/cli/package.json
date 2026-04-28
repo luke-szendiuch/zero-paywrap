@@ -1,6 +1,6 @@
 {
 	"name": "@zeroclickai/paywrap-cli",
-	"version": "0.0.11",
+	"version": "0.0.12",
 	"type": "module",
 	"description": "Interactive scaffolder + day-2 ops CLI for @zeroclickai/paywrap services.",
 	"license": "MIT",
