@@ -94,6 +94,11 @@ const readCredentialIds = (
 	};
 };
 
+const readCredentialAction = (credential: RawCredential): string | undefined => {
+	const payload = credential.payload as { action?: string } | undefined;
+	return payload?.action;
+};
+
 /**
  * Hono middleware for **metered** session-intent paid routes.
  *
@@ -162,6 +167,55 @@ export const mppMetered = (
 			return sendSessionChallenge(app, c, challengeOpts);
 		}
 
+		// CLOSE-VOUCHER PATH ────────────────────────────────────────────────
+		// CLI replays the original POST URL with action="close" + cumulative
+		// = acceptedCumulative from the receipt. mppx.verifyCredential routes
+		// close credentials through `handleClose` internally, which:
+		//   1. validates voucher.cumulativeAmount >= channel.spent
+		//   2. validates > onChain.settled, <= onChain.deposit, signature
+		//   3. submits closeOnChain (settles at the close voucher's amount)
+		//   4. flips channel.finalized = true
+		// We MUST overwrite channel.spent to the metered actual BEFORE this
+		// path runs (see the post-handler block below for the voucher path),
+		// otherwise the auto-charge from the original voucher leaves spent
+		// at maxAmount and close fails with "must be >= spent".
+		const action = readCredentialAction(credential);
+		if (action === "close") {
+			try {
+				await verifyWithScope(app.ctx.mppx, credential, opts.scope);
+			} catch (err) {
+				const detail = err instanceof Error ? err.message : "close_verify_failed";
+				await safeLog(logger, {
+					v: 1,
+					kind: "payment_failed",
+					timestamp: new Date().toISOString(),
+					protocol: "mpp",
+					stage: "settle",
+					reason: detail,
+					scope: opts.scope,
+					route,
+				});
+				// Surface the failure to the buyer so the CLI doesn't think
+				// the close succeeded. 422 (unprocessable) — credential
+				// shape is fine, but the channel state rejects it.
+				// biome-ignore lint/suspicious/noExplicitAny: hono StatusCode union
+				return c.json({ error: "close_failed", detail } as any, 422 as any);
+			}
+			const ids = readCredentialIds(credential);
+			await safeLog(logger, {
+				v: 1,
+				kind: "request_completed",
+				timestamp: new Date().toISOString(),
+				route,
+				status: 200,
+				latencyMs: Date.now() - startedAt,
+			});
+			// Empty 200 — CLI completeMppSession only checks status. No
+			// Payment-Receipt on close (the CLI submits, doesn't consume).
+			return c.json(ids.channelId ? { closed: true, channelId: ids.channelId } : { closed: true });
+		}
+		// END CLOSE-VOUCHER PATH ────────────────────────────────────────────
+
 		let verified: VerifiedCredential;
 		try {
 			verified = await verifyWithScope(app.ctx.mppx, credential, opts.scope);
@@ -228,6 +282,34 @@ export const mppMetered = (
 				spent: finalAmount.toString(),
 			};
 			c.header("Payment-Receipt", encodeSessionReceipt(receipt));
+			// Overwrite mppx's auto-charge of channel.spent (which always
+			// charges request.amount = maxAmount per voucher) with the
+			// metered actual. Without this, when the buyer's CLI later
+			// posts a close voucher at `actual`, mppx's handleClose rejects
+			// it ("close voucher amount must be >= <maxAmount> (spent)").
+			// Last-write-wins: if the handler called settle() multiple times,
+			// we use the final value, matching the receipt above.
+			try {
+				await app.ctx.mppxChannelStore.updateChannel(ids.channelId as Hex, (current) => {
+					if (!current) return null;
+					if (current.finalized) return current;
+					return { ...current, spent: finalAmount };
+				});
+			} catch (err) {
+				await safeLog(logger, {
+					v: 1,
+					kind: "payment_failed",
+					timestamp: new Date().toISOString(),
+					protocol: "mpp",
+					stage: "settle",
+					reason:
+						err instanceof Error
+							? `metered_spent_override_failed:${err.message}`
+							: "metered_spent_override_failed",
+					scope: opts.scope,
+					route,
+				});
+			}
 		}
 		// If channelId/challengeId are missing the credential isn't a session
 		// voucher — that should be impossible after verifyWithScope on a session
