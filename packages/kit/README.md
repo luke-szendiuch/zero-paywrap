@@ -226,13 +226,15 @@ The kit ships **no root barrel** — import only the subpath you need. This keep
 | `@zeroclickai/paywrap/signing` | `signVoucher`, `buildVoucherCredential`, `buildChargeCredential`, `channelIdFromLabel` | Buyer-side code (CLI, agent) producing signed Tempo vouchers / charge credentials. Useful in integration tests too. |
 | `@zeroclickai/paywrap/testing` | `seedChannel`, `stubVerifyCredential` | Seeding a `ChannelStore` with a fake-open channel in tests; stubbing `mppx.verifyCredential` to skip on-chain settlement. Not for production. |
 | `@zeroclickai/paywrap/crypto` | `encryptSecret`, `decryptSecret`, AES-256-GCM helpers | At-rest encryption of upstream credentials (connection strings, API tokens) stored in your DB. |
-| `@zeroclickai/paywrap/manifest` | `buildPaywrapJson` | Serving `/.well-known/paywrap.json` — the service manifest indexers + agents use to learn your pricing. |
+| `@zeroclickai/paywrap/manifest` | `buildPaywrapJson`, `buildOpenApiSpec` | Serving `/.well-known/paywrap.json` AND `/openapi.json` — both are required for indexer registration (see below). |
 | `@zeroclickai/paywrap/health` | `aggregateHealthProbes` | Assembling `/healthz` responses from per-subsystem probes. |
 | `@zeroclickai/paywrap/setup` | `generateWallet`, `generateMppSecretKey`, `prefundWallet` | One-shot setup scripts the CLI wraps; callable from a consumer's own `pnpm setup`. |
 | `@zeroclickai/paywrap/proxy` | `proxyUpstreamRequest`, `UpstreamProxyResponse` | Charge-intent services proxying an upstream API. Sniffs Content-Type and returns a discriminated `{kind: "json" \| "binary"}` so PNG/PDF endpoints don't get JSON-corrupted. |
 | `@zeroclickai/paywrap/logger` | `LoggerCallback`, `PaywrapLogEvent`, `consoleJsonLogger`, `safeLog`, `shortFingerprint` | Structured-event logging hook. Pass a `logger` to `createPaywrapMpp` / `createPaywrapX402` and adapters emit `payment_required`, `payment_settled`, `payment_failed`, and `request_completed`. Sink-agnostic — see "Observability" below. |
 
 ## Service discovery manifest
+
+> **You must serve BOTH `/.well-known/paywrap.json` AND `/openapi.json`.** The `/.well-known/paywrap.json` file describes pricing; the `/openapi.json` file describes route shapes. Some indexers (notably Zero's `/v1/register` crawler) only ingest your service when *both* are present — without an OpenAPI spec the registrar reports "no mpp/x402 signal at the provided URL" and silently skips your service. This is a real production footgun: discovered live during the zero-deepgram launch (the registrar probed paywrap.json correctly but bailed when openapi.json was missing).
 
 Agents and indexers discover paid routes through `/.well-known/paywrap.json`. `buildPaywrapJson` is intentionally small and typed: pass the seller wallet, paid routes, and free routes; serve the result as JSON.
 
@@ -263,6 +265,38 @@ app.get("/.well-known/paywrap.json", async () =>
 ```
 
 `sku` is seller-defined and should change when the priced unit changes. `pricingVersion` lets buyers bind a credential to a specific price contract without encoding every version detail into the path. Set `requestContentType` and `responseContentType` for binary or non-JSON routes so agents do not guess wrong.
+
+### OpenAPI spec — required, not optional
+
+Pair the manifest with an OpenAPI 3 spec at `/openapi.json`. `buildOpenApiSpec` reuses the same manifest you pass to `buildPaywrapJson`:
+
+```ts
+import { buildOpenApiSpec, buildPaywrapJson } from "@zeroclickai/paywrap/manifest";
+
+const buildManifest = (ctx) => ({
+	wallet: ctx.walletAddress,
+	paidRoutes: [/* ... */],
+	freeRoutes: [
+		{ method: "GET", path: "/.well-known/paywrap.json" },
+		{ method: "GET", path: "/openapi.json" },
+		{ method: "GET", path: "/healthz" },
+	],
+});
+
+app.get("/.well-known/paywrap.json", (c) => c.json(buildPaywrapJson(buildManifest(ctx))));
+
+app.get("/openapi.json", (c) =>
+	c.json(
+		buildOpenApiSpec(
+			buildManifest(ctx),
+			{ title: "My Service", version: "1.0", description: "What it does." },
+			{ serverUrl: ctx.env.PUBLIC_BASE_URL },
+		),
+	),
+);
+```
+
+The Zero indexer uses the OpenAPI spec to enumerate (method, path) pairs and extract per-endpoint schemas. Without it, the probe returns "no mpp/x402 signal" and your service is **invisible to agents searching the index**, regardless of how good your paywrap.json is.
 
 ## Validate before charging
 

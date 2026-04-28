@@ -106,21 +106,46 @@ describe("buildOpenApiSpec", () => {
 		]);
 	});
 
-	it("annotates paid routes with x-paywrap metadata + 402 response", () => {
+	it("annotates paid routes with x-payment-info (mppx-compatible) + 402 response", () => {
 		const spec = buildOpenApiSpec(manifest, { title: "x", version: "1" });
 		const paid = spec.paths["/v1/x402/sandboxes"]?.post as Record<string, unknown>;
-		const xpw = paid?.["x-paywrap"] as Record<string, unknown>;
-		expect(xpw.protocol).toBe("x402");
-		expect(xpw.sku).toBe("sandbox:30m");
-		expect(xpw.priceUsdcMicro).toBe("50000");
+		const info = paid?.["x-payment-info"] as Record<string, unknown>;
+		expect(info.method).toBe("x402");
+		expect(info.currency).toBe("USDC");
+		// Decimal USD string, NOT atomic micros — matches mppx convention.
+		expect(info.amount).toBe("0.05");
+		expect(info.sku).toBe("sandbox:30m");
 		const responses = paid?.responses as Record<string, unknown>;
 		expect(responses["402"]).toEqual({ $ref: "#/components/schemas/PaymentRequired" });
 	});
 
-	it("does not annotate free routes with x-paywrap or 402", () => {
+	it("converts MPP protocol to tempo method (upstream convention)", () => {
+		const mppManifest: PaywrapManifest = {
+			wallet: "0xabc",
+			paidRoutes: [
+				{
+					method: "POST",
+					path: "/v1/mpp",
+					protocol: "mpp",
+					sku: "mpp-sku",
+					priceUsdcMicro: "1000",
+					pricingVersion: 1,
+					description: "MPP route",
+				},
+			],
+			freeRoutes: [],
+		};
+		const spec = buildOpenApiSpec(mppManifest, { title: "x", version: "1" });
+		const paid = spec.paths["/v1/mpp"]?.post as Record<string, unknown>;
+		const info = paid?.["x-payment-info"] as Record<string, unknown>;
+		expect(info.method).toBe("tempo");
+		expect(info.amount).toBe("0.001");
+	});
+
+	it("does not annotate free routes with x-payment-info or 402", () => {
 		const spec = buildOpenApiSpec(manifest, { title: "x", version: "1" });
 		const free = spec.paths["/healthz"]?.get as Record<string, unknown>;
-		expect(free["x-paywrap"]).toBeUndefined();
+		expect(free["x-payment-info"]).toBeUndefined();
 		const responses = free.responses as Record<string, unknown>;
 		expect(responses["402"]).toBeUndefined();
 	});
