@@ -71,9 +71,37 @@ export type RequestCompletedEvent = PaywrapLogEventBase & {
 	payer?: Hex;
 };
 
+/**
+ * Emitted by `mppMetered()` after the handler returns. `actualAmountUsdcMicro`
+ * is what we encoded into the `Payment-Receipt` header (and thus what the
+ * buyer's CLI signs into the close voucher). `maxAmountUsdcMicro` is the
+ * upper-bound the voucher already covered — the gap (`max - actual`) is
+ * unused headroom that gets refunded to the buyer on close.
+ *
+ * Pair with `payment_settled` for non-metered routes; downstream sinks
+ * (D1, Datadog) can union both for utilization audits.
+ */
+export type PaymentMeteredSettledEvent = PaywrapLogEventBase & {
+	kind: "payment_metered_settled";
+	protocol: "mpp";
+	payer: Hex;
+	seller: Hex;
+	maxAmountUsdcMicro: string;
+	actualAmountUsdcMicro: string;
+	/** True iff handler did not call `c.var.settle(...)` — fell back to max. */
+	fallback: boolean;
+	route: string;
+	scope?: string;
+	sku?: string;
+	latencyMs: number;
+	credentialFingerprint?: string;
+	channelId?: string;
+};
+
 export type PaywrapLogEvent =
 	| PaymentRequiredEvent
 	| PaymentSettledEvent
+	| PaymentMeteredSettledEvent
 	| PaymentFailedEvent
 	| RequestCompletedEvent;
 

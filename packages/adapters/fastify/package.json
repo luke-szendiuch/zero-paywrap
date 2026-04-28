@@ -1,6 +1,6 @@
 {
 	"name": "@zeroclickai/paywrap-adapter-fastify",
-	"version": "0.0.7",
+	"version": "0.0.8",
 	"type": "module",
 	"description": "Fastify adapter for @zeroclickai/paywrap — challenge-reply helpers + preconfigured app factory.",
 	"license": "MIT",

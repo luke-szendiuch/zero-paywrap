@@ -195,6 +195,55 @@ export const extractCredential = (header: string | undefined): RawCredential | n
  * The header is normalized (`Payment ` prefix added if missing) so the
  * `Authorization:` and `Payment:` header forms produce the same digest.
  */
+/**
+ * Server-side payload that becomes the `Payment-Receipt` header on a paid
+ * session-intent 200 response. The CLI decodes this to learn the actual
+ * settled amount on the channel; without it the buyer would close at the
+ * full deposit (overpaying for unused capacity).
+ *
+ * - `acceptedCumulative` / `spent`: ABSOLUTE (not delta) cumulative on the
+ *   channel after this request. For the single-request session pattern
+ *   `mppx.fetch` produces today (open → 1 request → close), `prev = 0` so
+ *   both fields equal the actual amount charged.
+ * - `channelId`: the voucher's channel — read from `credential.payload.channelId`.
+ * - `challengeId`: the original 402 challenge id — read from `credential.challenge.id`.
+ *
+ * Wire format: base64url(JSON.stringify(payload)). `URLSearchParams` /
+ * `Buffer.from(..., 'base64')` MUST be tolerant to omitted padding — the CLI's
+ * `decodeSessionReceiptHeader` re-pads, so we strip `=` here for cleanliness
+ * and parity with how the CLI sends bytes back.
+ */
+export type SessionReceiptPayload = {
+	channelId: string;
+	challengeId: string;
+	acceptedCumulative: string;
+	spent: string;
+	txHash?: string;
+};
+
+const utf8 = new TextEncoder();
+
+const base64UrlEncode = (bytes: Uint8Array): string => {
+	let binary = "";
+	for (const byte of bytes) binary += String.fromCharCode(byte);
+	return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+};
+
+/**
+ * Encode a settlement receipt for the `Payment-Receipt` HTTP response header
+ * on session-intent paid responses. Pair with `mppMetered()` (hono adapter)
+ * which calls this after the handler computes the actual amount.
+ *
+ * Web-Crypto-friendly: base64url via `btoa` + character-mapping, no
+ * `Buffer` / `node:crypto` — runs identically on Node and Cloudflare Workers.
+ *
+ * Round-trip-tested against the Zero CLI's `decodeSessionReceiptHeader`.
+ */
+export const encodeSessionReceipt = (payload: SessionReceiptPayload): string => {
+	const json = JSON.stringify(payload);
+	return base64UrlEncode(utf8.encode(json));
+};
+
 export const fingerprintCredential = async (header: string): Promise<string> => {
 	const normalized = header.startsWith("Payment ") ? header : `Payment ${header}`;
 	const data = new TextEncoder().encode(normalized);

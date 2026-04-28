@@ -1,0 +1,267 @@
+import {
+	type RawCredential,
+	type SessionReceiptPayload,
+	type VerifiedCredential,
+	encodeSessionReceipt,
+	extractCredential,
+	fingerprintCredential,
+	payerFromCredential,
+} from "@zeroclickai/paywrap/auth";
+import { type LoggerCallback, safeLog, shortFingerprint } from "@zeroclickai/paywrap/logger";
+import { type PaywrapMpp, verifyWithScope } from "@zeroclickai/paywrap/mpp";
+import type { Context, MiddlewareHandler } from "hono";
+import { formatUnits } from "viem";
+import type { Hex } from "viem";
+import { sendSessionChallenge } from "./challenges.js";
+import type { PaywrapVariables } from "./gated.js";
+
+/**
+ * Hono variables `mppMetered` adds on top of the `mppGated` shape. Handlers
+ * MUST call `settle(actualAmount)` before returning so the middleware can
+ * emit the `Payment-Receipt` header at the resolved cost. If they forget,
+ * the middleware falls back to `maxAmount` and logs a `fallback: true` event
+ * so we can audit the bug.
+ *
+ * Augment Hono's variables to type-narrow:
+ *   const app = new Hono<{ Variables: PaywrapMeteredVariables }>()
+ *
+ * `settle` is idempotent for the last-wins case — if you call it twice the
+ * second wins, but you'll usually want to call it exactly once with the
+ * value you computed from the upstream response.
+ */
+export type PaywrapMeteredVariables = PaywrapVariables & {
+	/**
+	 * Record the actual amount this request consumed. Must be called before
+	 * the handler returns. Value will be encoded into the `Payment-Receipt`
+	 * header and used as `acceptedCumulative` on the buyer's close voucher.
+	 *
+	 * If `actualAmount > maxAmount`, the value is clamped to `maxAmount`
+	 * (the buyer's voucher only authorized up to maxAmount; we cannot bill
+	 * beyond what they signed). Clamping is logged with `clamped: true`.
+	 */
+	settle: (actualAmount: bigint) => void;
+};
+
+/** Convenience alias for handler typing. */
+export type PaywrapMeteredContext = Context<{ Variables: PaywrapMeteredVariables }>;
+
+/** USDC on Tempo has 6 decimals — hard-coded to avoid a kit import. */
+const USDC_DECIMALS = 6;
+
+export type MppMeteredOptions = {
+	scope: string;
+	/**
+	 * Upper bound. The buyer's voucher must cover at least this amount —
+	 * routes that handle wildly variable inputs (long audio, big PDFs)
+	 * should pick a generous max and rely on the actual settle to refund
+	 * unused capacity at session close.
+	 */
+	maxAmount: bigint;
+	meta?: Record<string, string>;
+	detail?: string;
+	unitType?: string;
+};
+
+type AppLike = {
+	ctx: {
+		mppx: PaywrapMpp["mppx"];
+		mppxChannelStore: PaywrapMpp["channelStore"];
+		paywrapLogger?: LoggerCallback;
+	};
+};
+
+// biome-ignore lint/suspicious/noExplicitAny: consumer Hono types are opaque to the adapter
+type AnyContext = Context<any, any, any>;
+
+const resolveApp = (c: AnyContext): AppLike => {
+	const fromVar = c.get("paywrapApp") as AppLike | undefined;
+	if (fromVar) return fromVar;
+	throw new Error(
+		"paywrap/mppMetered: expected `paywrapApp` on c.var — did you build the Hono instance with createHonoApp(ctx)?",
+	);
+};
+
+const readCredentialIds = (
+	credential: RawCredential,
+): { channelId?: string; challengeId?: string } => {
+	// Both fields are documented in the kit's signing/auth modules. Defensive
+	// reads keep this safe even if a future credential variant omits either.
+	const payload = credential.payload as { channelId?: string };
+	const challenge = credential.challenge as { id?: string } | undefined;
+	return {
+		...(payload?.channelId ? { channelId: payload.channelId } : {}),
+		...(challenge?.id ? { challengeId: challenge.id } : {}),
+	};
+};
+
+/**
+ * Hono middleware for **metered** session-intent paid routes.
+ *
+ * Flow per request:
+ *
+ *   1. Extract credential. If missing → 402 session challenge with
+ *      `amount = maxAmount` (buyer's CLI deposits maxAmount into escrow).
+ *   2. `verifyWithScope(credential, scope)` — same path as `mppGated`.
+ *   3. Set `c.var.payer`, `c.var.verifiedCredential`, `c.var.settle`.
+ *   4. Run the handler. Handler computes the actual cost (from upstream
+ *      response metadata, input size, etc.) and calls `c.var.settle(actual)`.
+ *   5. Encode `Payment-Receipt: base64url({channelId, challengeId,
+ *      acceptedCumulative: actual, spent: actual})` onto the response.
+ *   6. Emit `payment_metered_settled` log event.
+ *
+ * The CLI side (`zero fetch`) decodes Payment-Receipt and signs a close
+ * voucher at `acceptedCumulative`. Server submits that close voucher
+ * on-chain — the buyer pays only the actual amount, the unused
+ * `maxAmount - actual` returns to the buyer as the channel closes.
+ *
+ * Trust assumption (same as fixed-price session): the seller HOLDS the
+ * per-request voucher (cumulative = maxAmount) as insurance. If buyer
+ * refuses to sign close, seller can still submit the per-request voucher
+ * at maxAmount. Honest seller submits the close.
+ */
+export const mppMetered = (
+	opts: MppMeteredOptions,
+): MiddlewareHandler<{ Variables: PaywrapMeteredVariables }> => {
+	if (!opts.scope || typeof opts.scope !== "string") {
+		throw new Error("paywrap/mppMetered: `scope` is required and must be a non-empty string");
+	}
+	if (typeof opts.maxAmount !== "bigint" || opts.maxAmount <= 0n) {
+		throw new Error("paywrap/mppMetered: `maxAmount` must be a positive bigint (micro-USDC)");
+	}
+	const defaultDetail = opts.detail ?? "metered_payment_required";
+
+	return async (c, next) => {
+		const app = resolveApp(c);
+		const logger = app.ctx.paywrapLogger;
+		const route = `${c.req.method} ${c.req.path}`;
+		const startedAt = Date.now();
+		const header = c.req.header("authorization") ?? c.req.header("payment") ?? undefined;
+		const credential = extractCredential(header);
+		const humanMax = formatUnits(opts.maxAmount, USDC_DECIMALS);
+		const challengeOpts = {
+			amount: humanMax,
+			suggestedDeposit: humanMax,
+			scope: opts.scope,
+			detail: defaultDetail,
+			...(opts.unitType !== undefined ? { unitType: opts.unitType } : {}),
+			...(opts.meta ? { meta: opts.meta } : {}),
+		};
+
+		if (!credential) {
+			await safeLog(logger, {
+				v: 1,
+				kind: "payment_required",
+				timestamp: new Date().toISOString(),
+				protocol: "mpp",
+				route,
+				scope: opts.scope,
+				intent: "session",
+				amountUsdcMicro: opts.maxAmount.toString(),
+				...(opts.meta ? { meta: opts.meta } : {}),
+			});
+			return sendSessionChallenge(app, c, challengeOpts);
+		}
+
+		let verified: VerifiedCredential;
+		try {
+			verified = await verifyWithScope(app.ctx.mppx, credential, opts.scope);
+		} catch (err) {
+			const detail = err instanceof Error ? err.message : "verify_failed";
+			await safeLog(logger, {
+				v: 1,
+				kind: "payment_failed",
+				timestamp: new Date().toISOString(),
+				protocol: "mpp",
+				stage: "verify",
+				reason: detail,
+				scope: opts.scope,
+				route,
+			});
+			return sendSessionChallenge(app, c, { ...challengeOpts, detail });
+		}
+
+		const payer = await payerFromCredential(app.ctx.mppxChannelStore, verified);
+		if (!payer) {
+			await safeLog(logger, {
+				v: 1,
+				kind: "payment_failed",
+				timestamp: new Date().toISOString(),
+				protocol: "mpp",
+				stage: "verify",
+				reason: "channel_state_missing_after_verify",
+				scope: opts.scope,
+				route,
+			});
+			return sendSessionChallenge(app, c, {
+				...challengeOpts,
+				detail: "channel_state_missing_after_verify",
+			});
+		}
+
+		// Settle hook — handler calls this before returning. Last write wins.
+		// We do NOT clamp here; clamping happens once at receipt-emit time so
+		// a handler that calls settle multiple times sees its raw values.
+		let settled: bigint | null = null;
+		const settle = (actualAmount: bigint) => {
+			settled = actualAmount;
+		};
+
+		c.set("payer", payer);
+		c.set("verifiedCredential", verified);
+		c.set("settle", settle);
+
+		await next();
+
+		const fallback = settled === null;
+		const rawActual = settled ?? opts.maxAmount;
+		// Clamp upward at maxAmount — the buyer's voucher only covers max,
+		// any excess is the seller's bug or the seller's gift. Logged.
+		const clamped = rawActual > opts.maxAmount;
+		const finalAmount = clamped ? opts.maxAmount : rawActual < 0n ? 0n : rawActual;
+
+		const ids = readCredentialIds(credential);
+		if (ids.channelId && ids.challengeId) {
+			const receipt: SessionReceiptPayload = {
+				channelId: ids.channelId,
+				challengeId: ids.challengeId,
+				acceptedCumulative: finalAmount.toString(),
+				spent: finalAmount.toString(),
+			};
+			c.header("Payment-Receipt", encodeSessionReceipt(receipt));
+		}
+		// If channelId/challengeId are missing the credential isn't a session
+		// voucher — that should be impossible after verifyWithScope on a session
+		// scope, but we don't crash the response over it. Logged below.
+
+		const fp = shortFingerprint(await fingerprintCredential(header ?? ""));
+		await safeLog(logger, {
+			v: 1,
+			kind: "payment_metered_settled",
+			timestamp: new Date().toISOString(),
+			protocol: "mpp",
+			payer,
+			seller: app.ctx.mppx?.account?.address ?? ("0x" as Hex),
+			maxAmountUsdcMicro: opts.maxAmount.toString(),
+			actualAmountUsdcMicro: finalAmount.toString(),
+			fallback,
+			route,
+			scope: opts.scope,
+			...(opts.meta?.sku ? { sku: opts.meta.sku } : {}),
+			latencyMs: Date.now() - startedAt,
+			credentialFingerprint: fp,
+			...(ids.channelId ? { channelId: ids.channelId } : {}),
+		});
+		if (clamped) {
+			await safeLog(logger, {
+				v: 1,
+				kind: "payment_failed",
+				timestamp: new Date().toISOString(),
+				protocol: "mpp",
+				stage: "settle",
+				reason: `metered_actual_exceeded_max:${rawActual}>${opts.maxAmount}`,
+				scope: opts.scope,
+				route,
+			});
+		}
+	};
+};
