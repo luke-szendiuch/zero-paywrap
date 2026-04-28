@@ -112,6 +112,7 @@ describe("mppMetered — happy path (handler calls settle)", () => {
 		expect(receipt.spent).toBe("42000");
 		expect(receipt.channelId).toBeTruthy();
 		expect(receipt.challengeId).toBeTruthy();
+		expect(receipt.metered).toBe(true);
 	});
 });
 

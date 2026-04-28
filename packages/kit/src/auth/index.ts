@@ -219,6 +219,18 @@ export type SessionReceiptPayload = {
 	acceptedCumulative: string;
 	spent: string;
 	txHash?: string;
+	/**
+	 * Set by `mppMetered()` — signals to the buyer's CLI that
+	 * `acceptedCumulative` is the AUTHORITATIVE settle amount, not a floor.
+	 * The CLI normally clamps the close-voucher cumulative at the open-time
+	 * deposit (defensive, prevents stuck deposits if the receipt is
+	 * malformed); for metered routes that clamp inverts the protocol — the
+	 * seller is REFUNDING below the deposit and the buyer should sign at
+	 * `acceptedCumulative` directly.
+	 *
+	 * Absent / `false` → CLI keeps existing floor semantics (back-compat).
+	 */
+	metered?: boolean;
 };
 
 const utf8 = new TextEncoder();

@@ -44,6 +44,29 @@ describe("encodeSessionReceipt", () => {
 		expect(decodeAsCli(encoded)).toEqual(payload);
 	});
 
+	it("includes metered: true when set (CLI floor-skip signal)", () => {
+		const payload = {
+			channelId: "0xc",
+			challengeId: "id",
+			acceptedCumulative: "10000",
+			spent: "10000",
+			metered: true,
+		};
+		const decoded = decodeAsCli(encodeSessionReceipt(payload));
+		expect(decoded.metered).toBe(true);
+	});
+
+	it("omits metered when undefined (back-compat default)", () => {
+		const payload = {
+			channelId: "0xc",
+			challengeId: "id",
+			acceptedCumulative: "10000",
+			spent: "10000",
+		};
+		const decoded = decodeAsCli(encodeSessionReceipt(payload));
+		expect("metered" in decoded).toBe(false);
+	});
+
 	it("includes optional txHash when provided", () => {
 		const payload = {
 			channelId: "0xc",

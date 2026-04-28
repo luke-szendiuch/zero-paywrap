@@ -280,6 +280,11 @@ export const mppMetered = (
 				challengeId: ids.challengeId,
 				acceptedCumulative: finalAmount.toString(),
 				spent: finalAmount.toString(),
+				// Tells the buyer's CLI to skip the open-time deposit floor and
+				// sign close at `acceptedCumulative` (= the metered actual).
+				// Without this, CLIs default to the safer max(receipt, deposit)
+				// policy and the refund silently doesn't happen.
+				metered: true,
 			};
 			c.header("Payment-Receipt", encodeSessionReceipt(receipt));
 			// Overwrite mppx's auto-charge of channel.spent (which always
