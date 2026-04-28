@@ -57,3 +57,5 @@ export const buildPaywrapJson = (config: PaywrapManifest): PaywrapManifest => ({
 	paidRoutes: config.paidRoutes,
 	freeRoutes: config.freeRoutes,
 });
+
+export { buildOpenApiSpec, type OpenApiInfo } from "./openapi.js";
