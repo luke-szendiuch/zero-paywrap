@@ -7,7 +7,8 @@ The goal is simple:
 1. expose a normal HTTP endpoint,
 2. put a payment gate in front of it,
 3. publish discovery files so indexers know what it costs and how to call it,
-4. log enough settlement/refund data to operate it safely.
+4. list the deployed service on Zero,
+5. log enough settlement/refund data to operate it safely.
 
 ## Two Development Models
 
@@ -125,6 +126,25 @@ The generated OpenAPI marks paid routes with `x-payment-info`:
 ```
 
 At runtime, the route itself is the source of truth. A request without a payment credential should return `402` with a payment challenge header. OpenAPI helps agents discover what will happen; the 402 challenge tells them exactly what to sign.
+
+## Listing On Zero
+
+After deployment, submit the service origin to Zero's registrar:
+
+```sh
+curl -X POST "https://zero.xyz/v1/register" \
+  -H "content-type: application/json" \
+  -d '{
+    "url": "https://your-service.example.com",
+    "protocol": "mpp"
+  }'
+```
+
+Use `"protocol": "x402"` for x402 services. The `url` should be the public base URL, not `/openapi.json` and not an individual paid route.
+
+Zero crawls the base URL and probes `/openapi.json` to enumerate capabilities. Make sure the OpenAPI document is live, includes every paid operation, and marks each paid operation with `x-payment-info` plus a `402` response before registering. The route itself must also return a real payment challenge header when called without credentials.
+
+See [List Your Service On Zero](./list-on-zero.md) for the full registration guide, OpenAPI schema example, preflight checks, and troubleshooting table.
 
 ## Payment Methodologies
 
@@ -303,6 +323,7 @@ Before registering or advertising a service:
 - Make paid routes return real `402` challenge headers when called without payment.
 - Optionally serve `/.well-known/paywrap.json` for Paywrap-specific tooling.
 - Add `/healthz`.
+- Register the public base URL with `POST https://zero.xyz/v1/register`.
 - Use stable `sku` and `pricingVersion` values.
 - Validate request bodies in `preCheck` for charge-based routes.
 - Use durable state: Redis for Node session services, Workers KV for charge intent and low-concurrency Worker services.

@@ -8,7 +8,18 @@ Framework-agnostic primitives for building **agent-callable paid APIs** over HTT
 
 The kit is intentionally narrow — everything here is runnable from any Node HTTP framework. For Fastify, layer [`@zeroclickai/paywrap-adapter-fastify`](../adapters/fastify/) on top; for Hono / Workers / Bun, use [`@zeroclickai/paywrap-adapter-hono`](../adapters/hono/). The CLI is a separate package so runtime services don't carry scaffolder deps.
 
-Building your first paid API? Start with the [Service Builder Guide](./docs/service-builder-guide.md).
+Building your first paid API? Start with the [Service Builder Guide](./docs/service-builder-guide.md). It is the canonical walkthrough for choosing between charge-based, session-based, metered, and charge-plus-proof services.
+
+## Documentation
+
+Use the npm page as a fast front door, then jump into the page that matches the work in front of you:
+
+| Page | Use it when... |
+|---|---|
+| [Service Builder Guide](./docs/service-builder-guide.md) | You are designing a new paid service or deciding which payment model fits. |
+| [List Your Service On Zero](./docs/list-on-zero.md) | You are ready to register a deployed service with Zero's `/v1/register` endpoint. |
+| [Package Reference](./docs/package-reference.md) | You need the import map, companion packages, and manifest/OpenAPI helpers. |
+| [Operations Guide](./docs/operations.md) | You are preparing a service for production logging, validation, refunds, and smoke tests. |
 
 ## Two quickstart paths
 
