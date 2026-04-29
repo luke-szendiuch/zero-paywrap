@@ -73,8 +73,8 @@ export const indexEntryTemplate = (config: ScaffoldConfig): string => {
 	const mount: string[] = [
 		`\tawait app.register(healthRoutes, { prefix: "/healthz" });`,
 		`\tawait app.register(wellKnownRoutes, { prefix: "/.well-known" });`,
-		// Indexers (Zero) require BOTH paywrap.json AND openapi.json — see
-		// docs in routes-wellknown.ts. openApiRoutes mounts at the root.
+		// OpenAPI is the public discovery document; paywrap.json is optional
+		// Paywrap-specific metadata. openApiRoutes mounts at the root.
 		"\tawait app.register(openApiRoutes);",
 		`\tawait app.register(thingRoutes, { prefix: "/v1/things" });`,
 	];

@@ -58,14 +58,14 @@ ${steps.join("\n")}
 - \`src/app/\` — Fastify builder + shared context
 - \`src/routes/things.ts\` — your paid resource. Look for \`// TODO: implement\`.
 - \`src/routes/health.ts\` — \`/healthz\` aggregated via kit
-- \`src/routes/wellknown.ts\` — \`/.well-known/paywrap.json\`
+- \`src/routes/wellknown.ts\` — \`/openapi.json\` plus optional \`/.well-known/paywrap.json\`
 - \`src/core/env.ts\` — zod env schema
 ${config.intent === "charge" ? "- `src/services/thing-client.ts` — typed client for your upstream provider (source of truth for resources)\n" : ""}${config.intent === "session" && config.storage === "postgres-drizzle" ? "- `src/models/thing.ts` — Drizzle schema\n- `src/db/` — client + migrator\n" : ""}${config.queue === "bullmq-redis" ? "- `src/worker/` — BullMQ worker + cron drivers\n" : ""}
 
 ## Ops commands
 
 \`\`\`sh
-npx @zeroclickai/paywrap-cli check $PUBLIC_BASE_URL    # health + well-known
+npx @zeroclickai/paywrap-cli check $PUBLIC_BASE_URL    # health + discovery
 \`\`\`
 
 ## Where the kit ends and your service begins

@@ -2,7 +2,7 @@
 	"name": "zero-paywrap",
 	"version": "0.0.0",
 	"private": true,
-	"description": "Paywrap toolkit: build agent-callable paid APIs with MPP/x402 gates, pricing manifests, and settlement logs.",
+	"description": "Paywrap toolkit: build agent-callable paid APIs with MPP/x402 gates, OpenAPI payment metadata, and settlement logs.",
 	"type": "module",
 	"scripts": {
 		"build": "pnpm -r --filter './packages/*' build",

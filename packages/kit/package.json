@@ -1,7 +1,7 @@
 {
 	"name": "@zeroclickai/paywrap",
 	"version": "0.0.12",
-	"description": "Framework-agnostic primitives for building agent-callable paid APIs over HTTP: MPP/x402 gates, pricing manifests, credential verification, and settlement logs.",
+	"description": "Framework-agnostic primitives for building agent-callable paid APIs over HTTP: MPP/x402 gates, OpenAPI payment metadata, credential verification, and settlement logs.",
 	"type": "module",
 	"license": "MIT",
 	"repository": {
@@ -27,7 +27,7 @@
 		"./proxy": { "types": "./dist/proxy/index.d.ts", "import": "./dist/proxy/index.js" },
 		"./logger": { "types": "./dist/logger/index.d.ts", "import": "./dist/logger/index.js" }
 	},
-	"files": ["dist", "README.md"],
+	"files": ["dist", "README.md", "docs"],
 	"scripts": {
 		"build": "tsc",
 		"typecheck": "tsc --noEmit",

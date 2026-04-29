@@ -18,10 +18,10 @@ import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
 import type { AppContext } from "../app/app-context.js";
 
 /**
- * Serve \`/.well-known/paywrap.json\` AND \`/openapi.json\`. The Zero
- * indexer needs BOTH — paywrap.json describes pricing, openapi.json
- * describes route shapes. Without openapi.json, registration silently
- * returns "no mpp/x402 signal" and the service is invisible to agents.
+ * Serve \`/openapi.json\` as the public discovery document. Paid routes
+ * include x-payment-info plus a 402 response. \`paywrap.json\` is still
+ * useful for Paywrap-aware tooling, but OpenAPI + live 402 challenge headers
+ * are the interoperable contract agents should rely on.
  */
 const buildManifest = (app: { ctx: AppContext }) => ({
 \twallet: app.ctx.walletAddress,
