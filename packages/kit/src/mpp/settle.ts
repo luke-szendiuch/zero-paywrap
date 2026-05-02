@@ -1,7 +1,7 @@
 import { Session } from "mppx/tempo";
 import type { Hex } from "viem";
 import { TEMPO_ESCROW } from "./constants.js";
-import type { PaywrapMpp } from "./mppx.js";
+import type { PaywrapMppKeyed } from "./mppx.js";
 
 // Error messages from `Session.Chain.closeOnChain` that indicate idempotent
 // no-ops rather than real failures (already settled, channel gone, etc).
@@ -42,7 +42,7 @@ export type CloseSessionResult =
  * `@zeroclickai/paywrap/mpp/metered` instead.
  */
 export const closeSessionOnChain = async (
-	mpp: Pick<PaywrapMpp, "channelStore" | "client" | "account">,
+	mpp: Pick<PaywrapMppKeyed, "channelStore" | "client" | "account">,
 	channelId: Hex,
 	options?: { escrowContract?: Hex },
 ): Promise<CloseSessionResult> => {

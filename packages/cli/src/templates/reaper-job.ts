@@ -1,8 +1,12 @@
 export const reaperJobTemplate =
-	(): string => `import type { PaywrapMpp } from "@zeroclickai/paywrap/mpp";
+	(): string => `import type { PaywrapMppKeyed } from "@zeroclickai/paywrap/mpp";
 import type { Env } from "../../core/env.js";
 
-export type ReaperContext = { env: Env; mpp: PaywrapMpp };
+// The CLI scaffolder always wires \`createPaywrapMpp({ walletPrivateKey: ... })\`
+// (see worker/index.ts), so the runtime bundle is always full mode. Reference
+// PaywrapMppKeyed here so callers writing custom reaper logic that touches
+// \`mpp.account\` / \`mpp.client\` get the correct non-optional types.
+export type ReaperContext = { env: Env; mpp: PaywrapMppKeyed };
 
 /**
  * Reaper — periodic cleanup for orphaned/expired upstream resources.

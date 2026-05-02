@@ -26,7 +26,7 @@
 import { Session } from "mppx/tempo";
 import type { Hex } from "viem";
 import { TEMPO_ESCROW } from "./constants.js";
-import type { PaywrapMpp } from "./mppx.js";
+import type { PaywrapMpp, PaywrapMppKeyed } from "./mppx.js";
 import { type CloseSessionResult, isBenignCloseError } from "./settle.js";
 
 /** Buyer-signed close voucher captured server-side for on-chain submission. */
@@ -73,7 +73,7 @@ export const persistMeteredCloseVoucher = async (
 };
 
 const submitVoucher = async (
-	mpp: Pick<PaywrapMpp, "channelStore" | "client" | "account">,
+	mpp: Pick<PaywrapMppKeyed, "channelStore" | "client" | "account">,
 	channelId: Hex,
 	voucher: CloseVoucher,
 	escrow: Hex,
@@ -114,7 +114,7 @@ const submitVoucher = async (
  * automatically).
  */
 export const closeMeteredChannelOnChain = async (
-	mpp: Pick<PaywrapMpp, "channelStore" | "client" | "account">,
+	mpp: Pick<PaywrapMppKeyed, "channelStore" | "client" | "account">,
 	channelId: Hex,
 	voucher: CloseVoucher,
 	options?: { escrowContract?: Hex },
@@ -142,7 +142,7 @@ export const closeMeteredChannelOnChain = async (
  * gone silent and accept the max-amount settlement.
  */
 export const closeMeteredChannelFromState = async (
-	mpp: Pick<PaywrapMpp, "channelStore" | "client" | "account">,
+	mpp: Pick<PaywrapMppKeyed, "channelStore" | "client" | "account">,
 	channelId: Hex,
 	options?: { escrowContract?: Hex },
 ): Promise<CloseSessionResult> => {

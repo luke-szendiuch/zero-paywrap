@@ -73,7 +73,7 @@ export const workerStartTemplate = (config: ScaffoldConfig): string => {
 		? `import { makeSessionSettleJob } from "./jobs/session-settle-job.js";\n`
 		: `import { reaperJob } from "./jobs/reaper-job.js";\n`;
 
-	return `import type { PaywrapMpp } from "@zeroclickai/paywrap/mpp";
+	return `import type { PaywrapMppKeyed } from "@zeroclickai/paywrap/mpp";
 import { Worker } from "bullmq";
 import type { Env } from "../core/env.js";
 ${cronImport}import { type ThingJobData, makeConnection } from "./queue.js";
@@ -86,8 +86,12 @@ export type WorkerRuntime = {
 /**
  * BullMQ worker + cron drivers. For session-intent scaffolds we also schedule
  * the on-chain close job so vouchers don't pile up in mppx's store forever.
+ *
+ * \`mpp\` is typed as \`PaywrapMppKeyed\` because the scaffolded entrypoint always
+ * constructs the bundle with \`walletPrivateKey\`; on-chain settle helpers
+ * (\`closeSessionOnChain\`) require the signing account.
  */
-export const startWorkerRuntime = (env: Env, mpp: PaywrapMpp): WorkerRuntime => {
+export const startWorkerRuntime = (env: Env, mpp: PaywrapMppKeyed): WorkerRuntime => {
 \tconst connection = makeConnection(env.REDIS_URL);
 \tconst worker = new Worker<ThingJobData>(
 \t\t"things",
@@ -110,7 +114,7 @@ ${cronBlock}
 };
 
 export const sessionSettleJobTemplate =
-	(): string => `import { type PaywrapMpp, closeSessionOnChain } from "@zeroclickai/paywrap/mpp";
+	(): string => `import { type PaywrapMppKeyed, closeSessionOnChain } from "@zeroclickai/paywrap/mpp";
 import type { Hex } from "viem";
 
 /**
@@ -134,7 +138,7 @@ import type { Hex } from "viem";
  * See zero-redis-integration's \`ProvisionService.listDistinctChannels\`
  * for a working reference.
  */
-export const makeSessionSettleJob = (mpp: PaywrapMpp) => async () => {
+export const makeSessionSettleJob = (mpp: PaywrapMppKeyed) => async () => {
 \t// TODO: implement a DB query returning open channel ids — e.g.
 \t//   const channels = await ctx.services.things.listDistinctOpenChannels();
 \tconst channels: Hex[] = [];

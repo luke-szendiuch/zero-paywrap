@@ -78,6 +78,19 @@ await app.listen({ port: 3000 });
 >
 > Opting into `feePayer: true` on charge sponsors the buyer's gas — then the seller pays. mppx's default is no fee-payer. The [`paywrap`](../cli/) CLI provides `paywrap generate-wallet` + `paywrap prefund`.
 
+> **Default mode is keyless — pass a `walletAddress`.** For charge-intent and proof-intent services (the common case for stateless paid APIs) the seller never needs a private key in the runtime. `createPaywrapMpp({ walletAddress })` returns the basic `PaywrapMpp` shape: `{ mppx, channelStore, walletAddress }`. No signing material is provisioned, rotated, or accidentally logged.
+> ```ts
+> import { createPaywrapMpp, type PaywrapMpp } from "@zeroclickai/paywrap/mpp";
+>
+> const mpp: PaywrapMpp = createPaywrapMpp({
+>   walletAddress: process.env.WALLET_ADDRESS as `0x${string}`,  // public address only
+>   mppSecretKey: process.env.MPP_SECRET_KEY!,
+>   publicBaseUrl: process.env.PUBLIC_BASE_URL!,
+>   tempoRpcUrl: "https://rpc.tempo.xyz",
+> });
+> ```
+> Pass `walletPrivateKey` instead when you need a signer: session intent (server-side `openChannel`/`closeChannel` writes), session settle helpers like `closeSessionOnChain`, metered close helpers, or `feePayer: true` charge variants. That returns `PaywrapMppKeyed`, which structurally extends `PaywrapMpp` with `account` + `client` — so anywhere that takes `PaywrapMpp` also accepts a keyed bundle, but helpers that need a signer (e.g. `closeSessionOnChain(mpp: PaywrapMppKeyed)`) reject the keyless variant at the type level. The config is discriminated: passing both is a compile error. Calling `mppGated({ intent: "session", ... })` against a keyless `mppx` fails verification with a clear error — there is no session method registered.
+
 First-pass curl against a paid route:
 
 ```sh
