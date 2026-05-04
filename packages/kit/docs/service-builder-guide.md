@@ -131,7 +131,7 @@ At runtime, the route itself is the source of truth. A request without a payment
 After deployment, submit the service origin to Zero's registrar:
 
 ```sh
-curl -X POST "https://zero.xyz/v1/register" \
+curl -X POST "https://api.zero.xyz/v1/register" \
   -H "content-type: application/json" \
   -d '{
     "url": "https://your-service.example.com",
@@ -329,7 +329,7 @@ Before registering or advertising a service:
 - Emit `paywrap_refund_owed` for post-settlement failures that should not bill the buyer.
 - Set real `PUBLIC_BASE_URL`, `WALLET_PRIVATE_KEY`, `MPP_SECRET_KEY`, and RPC env vars.
 - Smoke test the 402 flow: no credential returns `402`, signed credential returns the paid result.
-- Complete the [provider readiness checklist](./list-on-zero.md#provider-readiness-checklist), then register the public base URL with `POST https://zero.xyz/v1/register`.
+- Complete the [provider readiness checklist](./list-on-zero.md#provider-readiness-checklist), then register the public base URL with `POST https://api.zero.xyz/v1/register`.
 
 ## What To Build First
 

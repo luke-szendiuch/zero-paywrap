@@ -86,7 +86,7 @@ Use stable `sku` values and increment `pricingVersion` when a priced unit change
 Register the public base URL after deployment:
 
 ```sh
-curl -X POST "https://zero.xyz/v1/register" \
+curl -X POST "https://api.zero.xyz/v1/register" \
   -H "content-type: application/json" \
   -d '{
     "url": "https://your-service.example.com",
@@ -189,6 +189,6 @@ Complete these checks before calling `/v1/register`.
 
 After the provider readiness checklist passes:
 
-- Register the base URL with `POST https://zero.xyz/v1/register`.
+- Register the base URL with `POST https://api.zero.xyz/v1/register`.
 - Confirm Zero indexed the expected capabilities, prices, and methods.
 - If discovery changes later, redeploy first, re-run the smoke tests, then register again.

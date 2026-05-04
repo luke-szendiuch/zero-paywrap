@@ -300,7 +300,6 @@ Workers isolates lose memory per restart. For state that must survive restarts:
 
 - **Charge-intent**: `workersKvStore(env.PAYWRAP_KV)` — free tier (100k reads + 1k writes per day + 1GB storage). No atomicity concerns for this pattern: challenge-id replay protection is the only shared state and KV's last-write-wins semantics don't break replay protection within the mppx window.
 - **Session-intent (low concurrency)**: same as above, with the caveat in [`workers-kv.ts`](../../kit/src/mpp/stores/workers-kv.ts)'s docblock — two concurrent vouchers on the same channel can corrupt `cumulativeAmount`.
-- **Session-intent (concurrent)**: Durable Object–backed store — future work, not yet shipped.
 
 `wrangler.toml`:
 

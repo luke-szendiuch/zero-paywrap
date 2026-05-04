@@ -120,7 +120,7 @@ Before registering or advertising a service:
 - Serve `/openapi.json` with `x-payment-info` and `402` responses on paid operations.
 - Make paid routes return real `402` challenge headers when called without payment.
 - Add `/healthz`.
-- Complete the [provider readiness checklist](./list-on-zero.md#provider-readiness-checklist), then register the public base URL with `POST https://zero.xyz/v1/register`.
+- Complete the [provider readiness checklist](./list-on-zero.md#provider-readiness-checklist), then register the public base URL with `POST https://api.zero.xyz/v1/register`.
 - Use stable `sku` and `pricingVersion` values.
 - Validate request bodies in `preCheck` for charge-based routes.
 - Use durable state: Redis for Node session services, Workers KV for charge intent and low-concurrency Worker services.
