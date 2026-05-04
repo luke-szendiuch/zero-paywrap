@@ -1,6 +1,6 @@
 # paywrap — product + architecture overview
 
-**Status:** v0.0.1-local — working across three repos, not yet published to npm.
+**Status:** Published to npm; kit + adapters + CLI are live. See `packages/kit/README.md` for the canonical user-facing overview and `docs/next-steps.md` for the current state snapshot.
 **Audience:** us, to sync on what this is, what it's not, and where it's going.
 
 ---

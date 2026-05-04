@@ -39,12 +39,17 @@ Stand up mppx, wire it onto a fastify instance, and gate any route with the `app
 import Fastify from "fastify";
 import { createPaywrapMpp } from "@zeroclickai/paywrap/mpp";
 import { createFastifyApp } from "@zeroclickai/paywrap-adapter-fastify";
+import { consoleJsonLogger } from "@zeroclickai/paywrap/logger";
 
+// Default mode: pass `walletAddress` only — buyer signs and pays gas, so
+// the seller never holds a private key. Use `walletPrivateKey` for
+// session-intent or `feePayer: true` charge (see callout below).
 const mpp = createPaywrapMpp({
-	walletPrivateKey: process.env.WALLET_PRIVATE_KEY as `0x${string}`,
+	walletAddress: process.env.WALLET_ADDRESS as `0x${string}`,
 	mppSecretKey: process.env.MPP_SECRET_KEY!,
 	publicBaseUrl: process.env.PUBLIC_BASE_URL!,
 	tempoRpcUrl: "https://rpc.tempo.xyz",
+	logger: consoleJsonLogger, // structured payment_required/settled/failed events on stdout
 	// `store` omitted → in-memory by default when REDIS_URL is unset.
 });
 
@@ -128,13 +133,12 @@ Workers bindings only exist per request, so build the paywrap ctx inside the `cr
 
 ```ts
 import { createHonoApp, mppGated } from "@zeroclickai/paywrap-adapter-hono";
-import { buildOpenApiSpec, buildPaywrapJson } from "@zeroclickai/paywrap/manifest";
+import { buildOpenApiSpec } from "@zeroclickai/paywrap/manifest";
 import { createPaywrapMpp, workersKvStore } from "@zeroclickai/paywrap/mpp";
-import { privateKeyToAccount } from "viem/accounts";
 
 type Env = {
 	PAYWRAP_KV: KVNamespace;
-	WALLET_PRIVATE_KEY: string;
+	WALLET_ADDRESS: string;
 	MPP_SECRET_KEY: string;
 	PUBLIC_BASE_URL: string;
 	TEMPO_RPC_URL: string;
@@ -146,18 +150,20 @@ const PRICING_VERSION = 1;
 const SCOPE = `${SKU}:${PRICING_VERSION}`;
 
 const app = createHonoApp<{ Bindings: Env }>((c) => {
+	// Cast the env string to viem's branded Hex once. Env bindings are
+	// always `string`; `createPaywrapMpp` wants `0x${string}`.
+	const walletAddress = c.env.WALLET_ADDRESS as `0x${string}`;
 	const mpp = createPaywrapMpp({
-		walletPrivateKey: c.env.WALLET_PRIVATE_KEY as `0x${string}`,
+		walletAddress,
 		mppSecretKey: c.env.MPP_SECRET_KEY,
 		publicBaseUrl: c.env.PUBLIC_BASE_URL,
 		tempoRpcUrl: c.env.TEMPO_RPC_URL,
 		store: workersKvStore(c.env.PAYWRAP_KV),
 	});
-	const account = privateKeyToAccount(c.env.WALLET_PRIVATE_KEY as `0x${string}`);
 	return {
 		mppx: mpp.mppx,
 		mppxChannelStore: mpp.channelStore,
-		walletAddress: account.address,
+		walletAddress: mpp.walletAddress, // canonical — present in both keyed and address-only modes
 		priceUsdcMicro: BigInt(c.env.SKU_PRICE_USDC_MICRO),
 	};
 });
@@ -180,6 +186,9 @@ const buildManifest = (ctx) => ({
 	freeRoutes: [{ method: "GET" as const, path: "/healthz" }],
 });
 
+// `/openapi.json` is the public discovery contract — paired with real `402`
+// responses on paid routes, it tells indexers and agents exactly what this
+// service costs and how to call it.
 app.get("/openapi.json", (c) => {
 	const ctx = c.get("paywrapApp").ctx;
 	return c.json(
@@ -189,13 +198,6 @@ app.get("/openapi.json", (c) => {
 			{ serverUrl: c.env.PUBLIC_BASE_URL },
 		),
 	);
-});
-
-// Optional: useful for Paywrap-aware tooling, but OpenAPI + 402 headers are
-// the public discovery contract.
-app.get("/.well-known/paywrap.json", (c) => {
-	const ctx = c.get("paywrapApp").ctx;
-	return c.json(buildPaywrapJson(buildManifest(ctx)));
 });
 
 app.post(
@@ -260,12 +262,13 @@ The kit ships **no root barrel** — import only the subpath you need. This keep
 | Subpath | Exports | Reach for it when… |
 |---|---|---|
 | `@zeroclickai/paywrap/mpp` | `createPaywrapMpp`, `memoryStore`, `redisStore`, `workersKvStore`, `closeSessionOnChain`, `verifyWithScope`, `assertVoucherAdvances`, `TEMPO_ESCROW`, `TEMPO_USDC`, `TEMPO_CHAIN_ID`, `tempoChain` | Bootstrapping mppx, choosing a channel-state store (in-memory / Redis / Workers KV), verifying credentials at route handlers, closing channels on-chain. |
+| `@zeroclickai/paywrap/mpp/metered` | metered-settlement helpers | Helpers for metered (max-authorized, actual-usage) settlement flows. Pair with `mppMetered` from the Hono adapter for routes whose final price is only known after the handler runs. |
 | `@zeroclickai/paywrap/x402` | `createPaywrapX402`, `BASE_NETWORK`, `BASE_SEPOLIA_NETWORK`, `BASE_USDC`, `BASE_SEPOLIA_USDC`, `x402NetworkId`, `x402UsdcAsset` | Bootstrapping the seller-side x402 resource server (Base / Base Sepolia, exact-evm, USDC). Pair with the hono adapter's `x402Gated()` to gate routes. Settlement runs through the configured x402 facilitator (defaults to `https://x402.org/facilitator`). |
 | `@zeroclickai/paywrap/auth` | `buildSessionChallenge`, `buildChargeChallenge`, `buildProofChallenge`, `payerFromCredential`, `fingerprintCredential`, `VerifiedCredential`, `VERIFIED` (brand symbol) | Minting 402 challenges from any framework, resolving the authenticated payer address from a verified credential, computing a stable idempotency key from a `Payment …` header. |
 | `@zeroclickai/paywrap/signing` | `signVoucher`, `buildVoucherCredential`, `buildChargeCredential`, `channelIdFromLabel` | Buyer-side code (CLI, agent) producing signed Tempo vouchers / charge credentials. Useful in integration tests too. |
 | `@zeroclickai/paywrap/testing` | `seedChannel`, `stubVerifyCredential` | Seeding a `ChannelStore` with a fake-open channel in tests; stubbing `mppx.verifyCredential` to skip on-chain settlement. Not for production. |
 | `@zeroclickai/paywrap/crypto` | `encryptSecret`, `decryptSecret`, AES-256-GCM helpers | At-rest encryption of upstream credentials (connection strings, API tokens) stored in your DB. |
-| `@zeroclickai/paywrap/manifest` | `buildPaywrapJson`, `buildOpenApiSpec` | Keeping route pricing in one typed manifest and emitting OpenAPI with `x-payment-info` + `402` responses. `paywrap.json` is optional Paywrap-specific metadata. |
+| `@zeroclickai/paywrap/manifest` | `buildOpenApiSpec`, `buildPaywrapJson` | Keeping route pricing in one typed manifest and emitting OpenAPI with `x-payment-info` + `402` responses. **`buildOpenApiSpec` is the public discovery contract — serve it at `/openapi.json`.** `buildPaywrapJson` is internal/legacy for Paywrap-specific tooling only; not part of the public contract. |
 | `@zeroclickai/paywrap/health` | `aggregateHealthProbes` | Assembling `/healthz` responses from per-subsystem probes. |
 | `@zeroclickai/paywrap/setup` | `generateWallet`, `generateMppSecretKey`, `prefundWallet` | One-shot setup scripts the CLI wraps; callable from a consumer's own `pnpm setup`. |
 | `@zeroclickai/paywrap/proxy` | `proxyUpstreamRequest`, `UpstreamProxyResponse` | Charge-intent services proxying an upstream API. Sniffs Content-Type and returns a discriminated `{kind: "json" \| "binary"}` so PNG/PDF endpoints don't get JSON-corrupted. |
@@ -273,12 +276,12 @@ The kit ships **no root barrel** — import only the subpath you need. This keep
 
 ## Service discovery: OpenAPI + 402
 
-The interoperable discovery surface is `/openapi.json` plus real `402 Payment Required` responses from paid routes. Put pricing and payment metadata on paid OpenAPI operations with `x-payment-info`, include a `402` response, and let the live route return the actual payment challenge header when called without a credential.
+`/openapi.json` is the public discovery surface, paired with real `402 Payment Required` responses from paid routes. Generate it with `buildOpenApiSpec` from `@zeroclickai/paywrap/manifest`: paid operations get `x-payment-info` (`method`, `currency`, `amount`, `sku`, `pricingVersion`) plus a `402` response, and the live route returns the actual payment challenge header when called without a credential. Together those two surfaces are the entire contract — indexers and agents do not need anything else to discover or call your service.
 
-Paywrap includes `buildPaywrapJson` because a typed manifest is a convenient internal source of truth for pricing. You can serve it at `/.well-known/paywrap.json` for Paywrap-aware tooling, but implementors should not rely on that private JSON as the public standard.
+`buildPaywrapJson` is shipped from the same subpath as an internal/legacy helper for Paywrap-specific tooling. It is **not** part of the public discovery contract; do not advertise `/.well-known/paywrap.json` to external consumers.
 
 ```ts
-import { buildOpenApiSpec, buildPaywrapJson } from "@zeroclickai/paywrap/manifest";
+import { buildOpenApiSpec } from "@zeroclickai/paywrap/manifest";
 
 const buildManifest = (ctx) => ({
 	wallet: ctx.walletAddress,
@@ -300,8 +303,6 @@ const buildManifest = (ctx) => ({
 		{ method: "GET", path: "/healthz" },
 	],
 });
-
-app.get("/.well-known/paywrap.json", (c) => c.json(buildPaywrapJson(buildManifest(ctx))));
 
 app.get("/openapi.json", (c) =>
 	c.json(
@@ -520,4 +521,4 @@ HMAC-bound challenge ids + scope enforcement are load-bearing: the kit enforces 
 
 - [`@zeroclickai/paywrap-adapter-fastify`](../adapters/fastify/) — Fastify adapter: `app.mppGated(...)`, `sendSessionChallenge`, `sendChargeChallenge`, `sendProofChallenge`, `extractCredential`, `createFastifyApp`.
 - [`@zeroclickai/paywrap-adapter-hono`](../adapters/hono/) — Hono / Workers / Bun adapter: `createHonoApp(...)`, `mppGated(...)`, `x402Gated(...)`, challenge helpers, Worker KV state examples.
-- [`@zeroclickai/paywrap-cli`](../cli/) (bin: `paywrap`) — interactive scaffolder (`paywrap create`), wallet generator, service publisher.
+- [`@zeroclickai/paywrap-cli`](../cli/) (bin: `paywrap`) — interactive scaffolder (`paywrap create`), wallet generator.

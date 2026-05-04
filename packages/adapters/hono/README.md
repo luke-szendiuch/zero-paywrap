@@ -97,7 +97,7 @@ If either applies, run `wrangler secret put WALLET_PRIVATE_KEY` instead of setti
 
 ```ts
 import { createHonoApp, mppGated } from "@zeroclickai/paywrap-adapter-hono";
-import { buildPaywrapJson } from "@zeroclickai/paywrap/manifest";
+import { buildOpenApiSpec } from "@zeroclickai/paywrap/manifest";
 import {
   type MinimalKVNamespace,
   createPaywrapMpp,
@@ -137,29 +137,35 @@ const app = createHonoApp<{
 
 app.get("/healthz", (c) => c.json({ status: "ok" }));
 
-// REQUIRED for service discovery — Zero's indexer probes this path.
-// If you also want to be enumerable in the catalog, also serve
-// `/openapi.json` via `buildOpenApiSpec` from the same kit module.
-app.get("/.well-known/paywrap.json", (c) => {
+// REQUIRED for service discovery — Zero's indexer probes `/openapi.json` to
+// enumerate paid routes and read pricing. Together with the live `402`
+// response on each paid route, this is the entire public discovery contract.
+app.get("/openapi.json", (c) => {
   return c.json(
-    buildPaywrapJson({
-      wallet: c.env.WALLET_ADDRESS as `0x${string}`,
-      paidRoutes: [
-        {
-          method: "POST",
-          path: "/v1/echo",
-          protocol: "mpp",
-          sku: "echo:1",
-          priceUsdcMicro: PRICE_MICRO.toString(),
-          pricingVersion: 1,
-          description: "Echo the request body. Charged per request.",
-        },
-      ],
-      freeRoutes: [
-        { method: "GET", path: "/healthz" },
-        { method: "GET", path: "/.well-known/paywrap.json" },
-      ],
-    }),
+    buildOpenApiSpec(
+      {
+        wallet: c.env.WALLET_ADDRESS as `0x${string}`,
+        paidRoutes: [
+          {
+            method: "POST",
+            path: "/v1/echo",
+            protocol: "mpp",
+            sku: "echo:1",
+            priceUsdcMicro: PRICE_MICRO.toString(),
+            pricingVersion: 1,
+            description: "Echo the request body. Charged per request.",
+            requestContentType: "application/json",
+            responseContentType: "application/json",
+          },
+        ],
+        freeRoutes: [
+          { method: "GET", path: "/healthz" },
+          { method: "GET", path: "/openapi.json" },
+        ],
+      },
+      { title: "Echo Service", version: "1.0.0" },
+      { serverUrl: c.env.PUBLIC_BASE_URL },
+    ),
   );
 });
 
@@ -194,7 +200,7 @@ curl https://<your-worker>/healthz
 curl -i -X POST https://<your-worker>/v1/echo -d '{}'
 ```
 
-The 402 response carries the `WWW-Authenticate: MPP ...` header your client uses to construct a payment. Any MPP-aware client (e.g. Zero's `paywrap-client`) will pay and retry transparently.
+The 402 response carries the `WWW-Authenticate: MPP ...` header. A buyer signs the challenge it describes (typically with `buildChargeCredential` from `@zeroclickai/paywrap/signing`) and retries with `Authorization: Payment <credential>`.
 
 ### What you integrated from paywrap
 
@@ -204,7 +210,7 @@ The 402 response carries the `WWW-Authenticate: MPP ...` header your client uses
 | `workersKvStore` (`/mpp`) | Workers KV–backed replay-protection store. Required for production; in-memory dies with the isolate. |
 | `createHonoApp` (adapter) | Hono app pre-wired with the `paywrapApp` ctx. Pass a factory because Worker bindings are per-request. |
 | `mppGated` (adapter) | Per-route middleware that issues 402 + verifies + settles. |
-| `buildPaywrapJson` (`/manifest`) | Builds the `/.well-known/paywrap.json` discovery manifest. Pair with `buildOpenApiSpec` if you want to be indexed by Zero. |
+| `buildOpenApiSpec` (`/manifest`) | Generates the public `/openapi.json` with `x-payment-info` + `402` responses on paid operations. This plus the live `402` headers is what Zero's indexer reads. |
 
 Everything else in this README (per-request pricing, `preCheck` validation, x402, custom `c.var` typing) is optional polish on top of the above.
 
@@ -288,10 +294,9 @@ Workers isolates lose memory per restart. For state that must survive restarts:
 [[kv_namespaces]]
 binding = "PAYWRAP_KV"
 id = "<your-namespace-id>"
-
-[build]
-nodejs_compat = true  # required for node:util (transitive via mppx)
 ```
+
+`compatibility_flags = ["nodejs_compat"]` at the top of `wrangler.toml` (shown in step 3) is what enables `node:util` for mppx. There is no `[build]` block needed.
 
 ## x402 protocol
 
@@ -314,7 +319,7 @@ app.post("/generate", x402Gated(x402, { price: "0.005" }), (c) =>
 );
 ```
 
-You can mix protocols on the same Hono app — register `mppGated` on routes that should accept MPP credentials and `x402Gated` on routes that should accept x402 payments. Indexers reading `/.well-known/paywrap.json` already see per-route `protocol: "mpp" | "x402"`.
+You can mix protocols on the same Hono app — register `mppGated` on routes that should accept MPP credentials and `x402Gated` on routes that should accept x402 payments. OpenAPI's `x-payment-info` already carries per-route `protocol: "mpp" | "x402"`, so indexers can route accordingly.
 
 For routes that need a custom `accepts` (multiple schemes/networks, non-USDC asset), pass `acceptsOverride` instead of `price`.
 
@@ -376,9 +381,42 @@ app.post(
 
 `claimedPayer` in `preCheck` is only a pre-verify hint. Use it to choose what to read, not to commit irreversible writes.
 
+## `mppGated` options
+
+`mppGated(options)` returns a Hono middleware that handles the full 402 → verify → settle dance for one route. It reads the `paywrapApp` ctx (`mppx`, `mppxChannelStore`) set by `createHonoApp`.
+
+```ts
+mppGated({
+  scope,        // string — HMAC-bound to the challenge id; must match across challenge + verify
+  intent?,      // "session" | "charge" | "proof"; defaults to "proof" when amount is omitted,
+                //   "session" when amount > 0. There is NO implicit charge default — pass it
+                //   explicitly for atomic single-shot pricing.
+  amount?,      // bigint micro-USDC. Required for "charge" and "session". Omit for "proof".
+  meta?,        // Record<string, string> echoed into the 402 challenge body and
+                //   surfaced in `payment_required` / `payment_settled` log events. Standard
+                //   keys: `sku`, `pricingVersion`.
+  preCheck?,    // async ({ c, claimedPayer }) => PreCheckResult — see below.
+})
+```
+
+`preCheck` runs after the credential is parsed but before verify/settle. Use it for cheap local validation that should not consume a charge.
+
+```ts
+type PreCheckResult =
+  | { ok: true }
+  | { ok: false; status: number; body: unknown }
+  | { ok: "already_done"; payer: `0x${string}`; verifiedCredential: VerifiedCredential };
+```
+
+- `{ ok: true }` — proceed to verify + settle.
+- `{ ok: false, status, body }` — short-circuit with that status/body without charging. Use for malformed input, name collisions, quota failures.
+- `{ ok: "already_done", payer, verifiedCredential }` — skip verify entirely; the route already handled this credential idempotently. The handler still gets typed `c.var.payer` and `c.var.verifiedCredential`.
+
+`claimedPayer` is the address parsed from the credential before verification. It is only a hint — safe for reads and routing decisions, never for irreversible writes. The adapter emits `payment_failed` with `stage: "precheck"` if `preCheck` throws.
+
 ## Per-request pricing
 
-If price comes from Worker env or a route registry, build the gate in a tiny route middleware so the challenge amount matches runtime config and `/.well-known/paywrap.json`.
+If price comes from Worker env or a route registry, build the gate in a tiny route middleware so the challenge amount matches runtime config and `/openapi.json`.
 
 ```ts
 app.post(

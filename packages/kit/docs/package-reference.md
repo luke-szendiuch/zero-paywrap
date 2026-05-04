@@ -13,7 +13,7 @@
 | `@zeroclickai/paywrap/signing` | Buyer-side voucher and charge credential signing for agents, CLIs, and integration tests. |
 | `@zeroclickai/paywrap/testing` | Test-only helpers for seeded channels and stubbed credential verification. |
 | `@zeroclickai/paywrap/crypto` | AES-256-GCM helpers for encrypting upstream credentials stored by your service. |
-| `@zeroclickai/paywrap/manifest` | Typed route manifests plus OpenAPI generation with `x-payment-info` and `402` responses. |
+| `@zeroclickai/paywrap/manifest` | Typed route manifests plus OpenAPI generation with `x-payment-info` and `402` responses. `buildOpenApiSpec` is the public discovery contract; `buildPaywrapJson` is internal/legacy for Paywrap-specific tooling only. |
 | `@zeroclickai/paywrap/health` | Combining subsystem probes into a `/healthz` response. |
 | `@zeroclickai/paywrap/setup` | Wallet generation, MPP secret generation, and wallet prefunding helpers used by setup scripts. |
 | `@zeroclickai/paywrap/proxy` | Charge-intent upstream proxy helpers that preserve JSON and binary responses correctly. |
@@ -30,7 +30,7 @@
 The `manifest` subpath is the easiest way to keep pricing metadata in one typed place:
 
 ```ts
-import { buildOpenApiSpec, buildPaywrapJson } from "@zeroclickai/paywrap/manifest";
+import { buildOpenApiSpec } from "@zeroclickai/paywrap/manifest";
 
 const manifest = {
 	wallet: "0xSellerSettlementAddress",
@@ -58,9 +58,7 @@ const openapi = buildOpenApiSpec(
 	{ title: "Render Service", version: "1.0.0" },
 	{ serverUrl: "https://api.example.com" },
 );
-
-const paywrapJson = buildPaywrapJson(manifest);
 ```
 
-OpenAPI is the public contract. `buildOpenApiSpec` emits `x-payment-info` and a `402` response for paid operations. `buildPaywrapJson` is useful for Paywrap-aware tooling, but external consumers should not need it to understand price or payment flow.
+OpenAPI is the public contract. `buildOpenApiSpec` emits `x-payment-info` and a `402` response for paid operations. `buildPaywrapJson` is exported from the same subpath for internal Paywrap-specific tooling; external consumers should not need it.
 

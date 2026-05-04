@@ -17,8 +17,11 @@ import Fastify from "fastify";
 import { createPaywrapMpp } from "@zeroclickai/paywrap/mpp";
 import { createFastifyApp } from "@zeroclickai/paywrap-adapter-fastify";
 
+// Charge-intent: the buyer signs and pays gas, so the seller never holds a
+// private key. Pass `walletPrivateKey` instead only for session-intent or
+// `feePayer: true` charge.
 const mpp = createPaywrapMpp({
-  walletPrivateKey: process.env.WALLET_PRIVATE_KEY as `0x${string}`,
+  walletAddress: process.env.WALLET_ADDRESS as `0x${string}`,
   mppSecretKey: process.env.MPP_SECRET_KEY!,
   publicBaseUrl: process.env.PUBLIC_BASE_URL!,
   tempoRpcUrl: "https://rpc.tempo.xyz",
@@ -27,7 +30,7 @@ const mpp = createPaywrapMpp({
 const app = await createFastifyApp({
   mppx: mpp.mppx,
   mppxChannelStore: mpp.channelStore,
-  walletAddress: mpp.account.address,
+  walletAddress: mpp.walletAddress, // present in both keyed and address-only modes
 });
 
 app.post("/generate", {
@@ -40,6 +43,10 @@ app.post("/generate", {
 
 await app.listen({ port: 3000 });
 ```
+
+**Default `intent` matters.** When `amount` is omitted `mppGated` defaults to `"proof"`; when `amount > 0` it defaults to `"session"`. Always pass `intent: "charge"` explicitly for atomic single-shot pricing — there is no implicit charge default.
+
+**Fire-and-forget after `reply.send()`?** Fastify's pooled buffers can be recycled before your background work runs. Always wrap the buffer with `defensiveBufferCopy` (see Gotchas).
 
 ## API
 

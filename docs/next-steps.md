@@ -1,6 +1,6 @@
 # Next steps + open plan
 
-Living doc. Last updated: 2026-04-24. Update when work lands.
+Living doc. Last updated: 2026-05-04. Update when work lands.
 
 ## Current state
 
@@ -42,10 +42,7 @@ Living doc. Last updated: 2026-04-24. Update when work lands.
 ### 1. Tag + publish `@zeroxyz/cli` v0.0.31 (5 min)
 PR piedotorg/zero#140 is merged. Cut `v0.0.31` tag → release-cli workflow → npm publish. Until that ships, `npm i -g @zeroxyz/cli@latest` still has the binary-upload bug (366-byte zip arrives as 590 bytes of replacement chars on the wire).
 
-### 2. Zero CLI stays separate — NOT refactoring onto kit (decided 2026-04-23)
-User confirmed: Zero CLI's `payment-service.ts` stays as-is. The buyer side and the seller kit are kept intentionally separate. No refactor, no shared primitives pulled into CLI. If the CLI and kit drift, that's acceptable — they serve different consumers (end-user CLI vs. service authors) and bundling them would couple releases.
-
-### 2b. Document the programmatic-buying pattern (30 min)
+### 2. Document the programmatic-buying pattern (30 min)
 Add a section to `packages/kit/README.md` titled "Buying paywrap services programmatically" with two snippets:
 - **Charge intent (~15 LOC)**: `fetch → if 402 → buildChargeCredential → retry`. Copy-pasteable.
 - **Session intent (~40 LOC)**: opens a channel, tracks cumulative amount, signs voucher per request. Points at `buildVoucherCredential` + explains the channel lifecycle.
@@ -72,9 +69,6 @@ The Worker code compiles and tests green, but it hasn't hit a real `wrangler dep
 - Whether a funded Tempo wallet actually lets charge settle on-chain from a Worker
 
 Effort: 30 min of wrangler config + 5 min of paid test request. Requires a CF account.
-
-### 5. Merge `paywrap` + `paywrap-cli` into one package? (DEFERRED — user already confirmed separate is right)
-User asked; we agreed separate packages is correct. CLI is invoked via `npx`, runtime services don't carry scaffolder deps. **No action needed.** Documented in root README + kit README.
 
 ---
 

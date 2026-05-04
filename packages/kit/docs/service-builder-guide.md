@@ -67,10 +67,10 @@ Every service should expose:
 
 OpenAPI is the public discovery document implementors already understand. Add payment metadata directly to each paid operation with `x-payment-info`, and include a `402` response. The live route must also advertise the payment requirement through its actual 402 headers, for example `WWW-Authenticate: Payment ...`.
 
-Paywrap also provides a small `PaywrapManifest` helper because it is a convenient internal source of truth for route pricing. You can use it to generate OpenAPI, but external consumers should not need to know about `paywrap.json`.
+Paywrap provides a small `PaywrapManifest` helper because it is a convenient internal source of truth for route pricing. Pass it to `buildOpenApiSpec` to emit the public discovery document.
 
 ```ts
-import { buildOpenApiSpec, buildPaywrapJson } from "@zeroclickai/paywrap/manifest";
+import { buildOpenApiSpec } from "@zeroclickai/paywrap/manifest";
 
 const manifest = {
 	wallet: "0xSellerSettlementAddress",
@@ -102,10 +102,9 @@ app.get("/openapi.json", (c) =>
 		),
 	),
 );
-
-// Optional: useful for Paywrap-aware tooling, but not the public standard.
-app.get("/.well-known/paywrap.json", (c) => c.json(buildPaywrapJson(manifest)));
 ```
+
+`buildPaywrapJson` from the same subpath exists for internal Paywrap-specific tooling; OpenAPI plus the live `402` is the public contract and is sufficient for indexers.
 
 The generated OpenAPI marks paid routes with `x-payment-info`:
 
@@ -321,9 +320,7 @@ Before registering or advertising a service:
 
 - Serve `/openapi.json` with `x-payment-info` and `402` responses on paid operations.
 - Make paid routes return real `402` challenge headers when called without payment.
-- Optionally serve `/.well-known/paywrap.json` for Paywrap-specific tooling.
 - Add `/healthz`.
-- Register the public base URL with `POST https://zero.xyz/v1/register`.
 - Use stable `sku` and `pricingVersion` values.
 - Validate request bodies in `preCheck` for charge-based routes.
 - Use durable state: Redis for Node session services, Workers KV for charge intent and low-concurrency Worker services.
@@ -332,6 +329,7 @@ Before registering or advertising a service:
 - Emit `paywrap_refund_owed` for post-settlement failures that should not bill the buyer.
 - Set real `PUBLIC_BASE_URL`, `WALLET_PRIVATE_KEY`, `MPP_SECRET_KEY`, and RPC env vars.
 - Smoke test the 402 flow: no credential returns `402`, signed credential returns the paid result.
+- Complete the [provider readiness checklist](./list-on-zero.md#provider-readiness-checklist), then register the public base URL with `POST https://zero.xyz/v1/register`.
 
 ## What To Build First
 
