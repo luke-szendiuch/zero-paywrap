@@ -1,23 +1,26 @@
 import type { ScaffoldConfig } from "../lib/scaffold-config.js";
 
 export const appContextTemplate = (config: ScaffoldConfig): string => {
-	// The CLI scaffolder always wires `createPaywrapMpp({ walletPrivateKey: ... })`,
-	// so the runtime bundle is always full mode. Reference `PaywrapMppKeyed` here
-	// so `mppxClient` and `mppxAccount` stay non-optional in the emitted context
-	// type — using the union (`PaywrapMpp`) widens both to `… | undefined` and
-	// silently degrades downstream call sites that destructure them.
+	// In private-key mode the scaffolder wires `createPaywrapMpp({ walletPrivateKey })`,
+	// which returns `PaywrapMppKeyed` — `mppxClient` and `mppxAccount` are non-optional.
+	// In address-only mode there's no signing account, so we narrow to the base
+	// `PaywrapMpp` and omit `mppxAccount`.
+	const addressOnly = config.walletMode === "address-only";
+	const mppType = addressOnly ? "PaywrapMpp" : "PaywrapMppKeyed";
 	const imports: string[] = [
-		`import type { PaywrapMppKeyed } from "@zeroclickai/paywrap/mpp";`,
+		`import type { ${mppType} } from "@zeroclickai/paywrap/mpp";`,
 		`import type { Env } from "../core/env.js";`,
 	];
 	const fields: string[] = [
 		"\tenv: Env;",
 		"\twalletAddress: `0x${string}`;",
-		`\tmppx: PaywrapMppKeyed["mppx"];`,
-		`\tchannelStore: PaywrapMppKeyed["channelStore"];`,
-		`\tmppxClient: PaywrapMppKeyed["client"];`,
-		`\tmppxAccount: PaywrapMppKeyed["account"];`,
+		`\tmppx: ${mppType}["mppx"];`,
+		`\tchannelStore: ${mppType}["channelStore"];`,
 	];
+	if (!addressOnly) {
+		fields.push(`\tmppxClient: PaywrapMppKeyed["client"];`);
+		fields.push(`\tmppxAccount: PaywrapMppKeyed["account"];`);
+	}
 	if (config.intent === "charge") {
 		imports.push(`import type { ResourceClient } from "../services/thing-client.js";`);
 		fields.push("\tresourceClient: ResourceClient;");

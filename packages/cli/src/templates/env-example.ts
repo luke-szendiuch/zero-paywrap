@@ -32,11 +32,18 @@ export const envExampleTemplate = (config: ScaffoldConfig): string => {
 	lines.push("# Public URL where this service is reachable. Must have a hostname.");
 	lines.push("PUBLIC_BASE_URL=http://localhost:3000");
 	lines.push("");
-	lines.push("# Wallet that receives payment. Generate with: paywrap generate-wallet");
-	lines.push(
-		"WALLET_PRIVATE_KEY=0x0000000000000000000000000000000000000000000000000000000000000000",
-	);
-	lines.push("");
+	if (config.walletMode === "address-only") {
+		lines.push("# Wallet that receives payment. Address-only — service holds no private");
+		lines.push("# key. The buyer pays Tempo gas in USDC, so this is enough for charge.");
+		lines.push("WALLET_ADDRESS=0x0000000000000000000000000000000000000000");
+		lines.push("");
+	} else {
+		lines.push("# Wallet that receives payment. Generate with: paywrap generate-wallet");
+		lines.push(
+			"WALLET_PRIVATE_KEY=0x0000000000000000000000000000000000000000000000000000000000000000",
+		);
+		lines.push("");
+	}
 	lines.push("# HMAC key that binds mppx challenge ids to this server (min 32 bytes of entropy).");
 	lines.push(
 		"# Generate with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\"",
@@ -46,8 +53,8 @@ export const envExampleTemplate = (config: ScaffoldConfig): string => {
 	lines.push("# Tempo mainnet RPC. Free public endpoint: https://rpc.tempo.xyz");
 	lines.push("TEMPO_RPC_URL=https://rpc.tempo.xyz");
 	lines.push("");
-	lines.push("# Where Zero's catalog lives. Mainnet: https://api.zero.run");
-	lines.push("ZERO_API_URL=https://api.zero.run");
+	lines.push("# Where Zero's catalog lives. Mainnet: https://api.zero.xyz");
+	lines.push("ZERO_API_URL=https://api.zero.xyz");
 	lines.push("");
 	lines.push("# Pricing");
 	lines.push(

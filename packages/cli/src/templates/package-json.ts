@@ -6,17 +6,24 @@ import type { ScaffoldConfig } from "../lib/scaffold-config.js";
  * the user's choices — keep every `if` branch narrow so the diff of enabled
  * vs. disabled features stays readable.
  */
+// Bump these alongside any release of @zeroclickai/paywrap or its adapters.
+// `^0.0.x` is exact under npm semver, so an outdated pin here ships an
+// outdated kit to every new scaffold.
+const PAYWRAP_VERSION = "^0.0.16";
+const PAYWRAP_ADAPTER_FASTIFY_VERSION = "^0.0.14";
+const MPPX_VERSION = "^0.6.14";
+
 export const packageJsonTemplate = (config: ScaffoldConfig): string => {
 	const deps: Record<string, string> = {
-		"@zeroclickai/paywrap": "^0.0.1",
-		mppx: "^0.6.2",
+		"@zeroclickai/paywrap": PAYWRAP_VERSION,
+		mppx: MPPX_VERSION,
 		viem: "^2.21.55",
 		zod: "^3.24.1",
 	};
 	if (config.framework === "fastify") {
 		deps.fastify = "^5.2.0";
 		deps["fastify-type-provider-zod"] = "^4.0.2";
-		deps["@zeroclickai/paywrap-adapter-fastify"] = "^0.0.1";
+		deps["@zeroclickai/paywrap-adapter-fastify"] = PAYWRAP_ADAPTER_FASTIFY_VERSION;
 	}
 	// Charge intent is stateless — no DB. Only wire drizzle/pg for session.
 	if (config.intent === "session" && config.storage === "postgres-drizzle") {

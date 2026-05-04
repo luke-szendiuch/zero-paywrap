@@ -306,6 +306,155 @@ describe("runCreate (minimal: fastify + no storage + no queue)", () => {
 	});
 });
 
+describe("runCreate (charge + address-only)", () => {
+	let target = "";
+	beforeEach(() => {
+		target = makeTmpDir("addr-only");
+	});
+	afterEach(() => {
+		if (existsSync(target)) rmSync(target, { recursive: true, force: true });
+	});
+
+	it("emits WALLET_ADDRESS (not WALLET_PRIVATE_KEY) and address-only mpp wiring", async () => {
+		const prompter = makeStubPrompter({
+			serviceName: "ao-svc",
+			intent: "charge",
+			priceUsdc: "0.02",
+			scope: "ao-svc:1",
+			durationSeconds: "2592000",
+			framework: "fastify",
+			storage: "none",
+			queue: "none",
+			hosting: "skip",
+			walletMode: "address-only",
+			generateWalletNow: true,
+		});
+		const result = await runCreate(target, { prompter, skipInstall: true });
+		expect(result.config.walletMode).toBe("address-only");
+
+		const envSchema = readFileSync(join(target, "src/core/env.ts"), "utf8");
+		expect(envSchema.includes("WALLET_ADDRESS")).toBe(true);
+		expect(envSchema.includes("WALLET_PRIVATE_KEY")).toBe(false);
+
+		const envExample = readFileSync(join(target, ".env.example"), "utf8");
+		expect(envExample.includes("WALLET_ADDRESS=")).toBe(true);
+		expect(envExample.includes("WALLET_PRIVATE_KEY=")).toBe(false);
+
+		// Pre-seeded .env must not persist the private key.
+		const envFile = readFileSync(join(target, ".env"), "utf8");
+		expect(envFile.includes("WALLET_PRIVATE_KEY=")).toBe(false);
+		expect(envFile.includes("WALLET_ADDRESS=")).toBe(true);
+
+		const indexEntry = readFileSync(join(target, "src/index.ts"), "utf8");
+		expect(indexEntry.includes("walletAddress: env.WALLET_ADDRESS")).toBe(true);
+		expect(indexEntry.includes("walletPrivateKey")).toBe(false);
+
+		const ctx = readFileSync(join(target, "src/app/app-context.ts"), "utf8");
+		expect(ctx.includes("PaywrapMpp")).toBe(true);
+		expect(ctx.includes("PaywrapMppKeyed")).toBe(false);
+		expect(ctx.includes("mppxAccount")).toBe(false);
+	});
+
+	it("session intent ignores address-only choice (always private-key)", async () => {
+		const prompter = makeStubPrompter({
+			serviceName: "sess-svc",
+			intent: "session",
+			priceUsdc: "0.02",
+			scope: "sess-svc:1",
+			durationSeconds: "2592000",
+			framework: "fastify",
+			storage: "none",
+			queue: "none",
+			hosting: "skip",
+			walletMode: "address-only",
+			generateWalletNow: true,
+			prefundWallet: false,
+		});
+		const result = await runCreate(target, { prompter, skipInstall: true });
+		expect(result.config.walletMode).toBe("private-key");
+	});
+});
+
+describe("runCreate (hono-workers framework)", () => {
+	let target = "";
+	beforeEach(() => {
+		target = makeTmpDir("hono-workers");
+	});
+	afterEach(() => {
+		if (existsSync(target)) rmSync(target, { recursive: true, force: true });
+	});
+
+	it("emits a Workers-flavored file set and skips fastify scaffolding", async () => {
+		const prompter = makeStubPrompter({
+			serviceName: "wkr-svc",
+			intent: "charge",
+			priceUsdc: "0.02",
+			scope: "wkr-svc:1",
+			durationSeconds: "2592000",
+			framework: "hono-workers",
+			walletMode: "address-only",
+			generateWalletNow: true,
+			hosting: "skip",
+		});
+		await runCreate(target, { prompter, skipInstall: true });
+
+		// Workers-only files exist…
+		for (const rel of [
+			"package.json",
+			"tsconfig.json",
+			"wrangler.toml",
+			".dev.vars.example",
+			"src/worker.ts",
+			"README.md",
+		]) {
+			expect(existsSync(join(target, rel)), `expected ${rel}`).toBe(true);
+		}
+		// …and Node-style scaffolding does NOT.
+		for (const rel of [
+			"src/index.ts",
+			"src/app/build-app.ts",
+			"src/routes/things.ts",
+			"src/core/env.ts",
+			"Dockerfile",
+		]) {
+			expect(existsSync(join(target, rel)), `should not emit ${rel}`).toBe(false);
+		}
+
+		const pkg = JSON.parse(readFileSync(join(target, "package.json"), "utf8"));
+		expect(pkg.dependencies["@zeroclickai/paywrap-adapter-hono"]).toBeDefined();
+		expect(pkg.dependencies.hono).toBeDefined();
+		expect(pkg.devDependencies.wrangler).toBeDefined();
+		expect(pkg.dependencies.fastify).toBeUndefined();
+
+		const wrangler = readFileSync(join(target, "wrangler.toml"), "utf8");
+		expect(wrangler.includes("nodejs_compat")).toBe(true);
+
+		const worker = readFileSync(join(target, "src/worker.ts"), "utf8");
+		expect(worker.includes("walletAddress: env.WALLET_ADDRESS")).toBe(true);
+		expect(worker.includes("mppGated")).toBe(true);
+	});
+
+	it("forces charge intent + skips storage/queue when picking hono-workers", async () => {
+		const prompter = makeStubPrompter({
+			serviceName: "wkr-sess",
+			intent: "session",
+			priceUsdc: "0.02",
+			scope: "wkr-sess:1",
+			durationSeconds: "2592000",
+			framework: "hono-workers",
+			storage: "postgres-drizzle",
+			queue: "bullmq-redis",
+			hosting: "skip",
+			walletMode: "address-only",
+			generateWalletNow: false,
+		});
+		const result = await runCreate(target, { prompter, skipInstall: true });
+		expect(result.config.intent).toBe("charge");
+		expect(result.config.storage).toBe("none");
+		expect(result.config.queue).toBe("none");
+	});
+});
+
 describe("runCreate with --yes / defaults", () => {
 	let target = "";
 	beforeEach(() => {

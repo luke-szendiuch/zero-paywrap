@@ -13,6 +13,15 @@ import { dockerfileTemplate } from "../templates/dockerfile.js";
 import { envExampleTemplate } from "../templates/env-example.js";
 import { envSchemaTemplate } from "../templates/env-schema.js";
 import { gitignoreTemplate } from "../templates/gitignore.js";
+import {
+	devVarsExampleTemplate,
+	honoWorkerEntryTemplate,
+	honoWorkersGitignoreTemplate,
+	honoWorkersPackageJsonTemplate,
+	honoWorkersReadmeTemplate,
+	honoWorkersTsconfigTemplate,
+	wranglerTomlTemplate,
+} from "../templates/hono-workers.js";
 import { indexEntryTemplate } from "../templates/index-entry.js";
 import { packageJsonTemplate } from "../templates/package-json.js";
 import { readmeTemplate } from "../templates/readme.js";
@@ -36,6 +45,7 @@ import type { ScaffoldConfig } from "./scaffold-config.js";
 export type ScaffoldFileMap = Record<string, string>;
 
 export const buildScaffoldFileMap = (config: ScaffoldConfig): ScaffoldFileMap => {
+	if (config.framework === "hono-workers") return buildHonoWorkersFileMap(config);
 	const files: ScaffoldFileMap = {};
 	files["package.json"] = packageJsonTemplate(config);
 	files["tsconfig.json"] = tsconfigTemplate();
@@ -68,7 +78,7 @@ export const buildScaffoldFileMap = (config: ScaffoldConfig): ScaffoldFileMap =>
 
 	if (config.queue === "bullmq-redis") {
 		files["src/worker/queue.ts"] = workerQueueTemplate();
-		files["src/worker/index.ts"] = workerIndexTemplate();
+		files["src/worker/index.ts"] = workerIndexTemplate(config);
 		files["src/worker/start.ts"] = workerStartTemplate(config);
 		if (config.intent === "session") {
 			files["src/worker/jobs/session-settle-job.ts"] = sessionSettleJobTemplate();
@@ -79,14 +89,46 @@ export const buildScaffoldFileMap = (config: ScaffoldConfig): ScaffoldFileMap =>
 	}
 
 	// Pre-seed .env with the generated wallet so the user can run immediately.
+	// Address-only mode never persists the private key — caller is responsible
+	// for printing it to stdout once if the user wants to keep it.
 	if (config.wallet) {
-		const envLines = [
-			`WALLET_PRIVATE_KEY=${config.wallet.privateKey}`,
-			`WALLET_ADDRESS=${config.wallet.address}`,
-		];
+		const envLines: string[] = [];
+		if (config.walletMode === "private-key") {
+			envLines.push(`WALLET_PRIVATE_KEY=${config.wallet.privateKey}`);
+		}
+		envLines.push(`WALLET_ADDRESS=${config.wallet.address}`);
 		files[".env"] = `${envLines.join("\n")}\n`;
 	}
 
+	return files;
+};
+
+/**
+ * Cloudflare Workers + Hono scaffold. Charge intent only for v1 — session
+ * intent on Workers is feasible (kit ships `workersKvStore`) but the KV
+ * store is not linearizable and that warning belongs in a deliberate
+ * follow-up rather than buried inside a scaffold prompt.
+ */
+const buildHonoWorkersFileMap = (config: ScaffoldConfig): ScaffoldFileMap => {
+	const files: ScaffoldFileMap = {};
+	files["package.json"] = honoWorkersPackageJsonTemplate(config);
+	files["tsconfig.json"] = honoWorkersTsconfigTemplate();
+	files["biome.json"] = biomeTemplate();
+	files["wrangler.toml"] = wranglerTomlTemplate(config);
+	files[".dev.vars.example"] = devVarsExampleTemplate(config);
+	files[".gitignore"] = honoWorkersGitignoreTemplate();
+	files["README.md"] = honoWorkersReadmeTemplate(config);
+	files["src/worker.ts"] = honoWorkerEntryTemplate(config);
+
+	// Pre-seed .dev.vars for `wrangler dev`. Mirrors the .env behavior in
+	// the fastify scaffold — address-only never persists the private key.
+	if (config.wallet) {
+		const lines: string[] = [];
+		if (config.walletMode === "private-key") {
+			lines.push(`WALLET_PRIVATE_KEY=${config.wallet.privateKey}`);
+		}
+		files[".dev.vars"] = `${lines.join("\n")}\n`;
+	}
 	return files;
 };
 

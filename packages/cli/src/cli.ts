@@ -1,4 +1,7 @@
 #!/usr/bin/env node
+import { readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import "dotenv/config";
 import { Command } from "commander";
 import { execa } from "execa";
@@ -8,6 +11,12 @@ import { runGenerateSecrets } from "./commands/generate-secrets.js";
 import { runGenerateWallet } from "./commands/generate-wallet.js";
 import { runPrefund } from "./commands/prefund.js";
 
+// Resolve our own version from package.json so `--version` doesn't drift
+// from what npm publishes.
+const pkg = JSON.parse(
+	readFileSync(resolve(dirname(fileURLToPath(import.meta.url)), "../package.json"), "utf8"),
+) as { version: string };
+
 // Each subcommand delegates to a `run*` function in `./commands/`. Keep this
 // file dumb so tests can exercise commands without spawning a child process.
 const program = new Command();
@@ -15,7 +24,7 @@ const program = new Command();
 program
 	.name("paywrap")
 	.description("Scaffold + operate @zeroclickai/paywrap services")
-	.version("0.0.1");
+	.version(pkg.version);
 
 program
 	.command("create [dir]")
@@ -60,6 +69,15 @@ program
 			);
 			if (result.config.wallet) {
 				process.stdout.write(`  wallet: ${result.config.wallet.address}\n`);
+				// Address-only mode never writes the private key to disk. Print
+				// it here once so the user can stash it in a password manager —
+				// if they don't, they lose control of the receiving wallet.
+				if (result.config.walletMode === "address-only") {
+					process.stdout.write(
+						`\n  ⚠ address-only mode — save this private key NOW (won't be shown again):\n`,
+					);
+					process.stdout.write(`    ${result.config.wallet.privateKey}\n`);
+				}
 			}
 			if (result.config.prefundTxHash) {
 				process.stdout.write(`  prefund tx: ${result.config.prefundTxHash}\n`);

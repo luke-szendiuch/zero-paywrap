@@ -2,13 +2,15 @@ import { existsSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import { generateMppSecretKey, generateWallet, prefundWallet } from "@zeroclickai/paywrap/setup";
 import { type Prompter, makeClackPrompter } from "../lib/prompter.js";
-import type {
-	HostingHint,
-	HttpFramework,
-	PaymentIntent,
-	QueueChoice,
-	ScaffoldConfig,
-	StorageChoice,
+import {
+	type HostingHint,
+	type HttpFramework,
+	type PaymentIntent,
+	type QueueChoice,
+	type ScaffoldConfig,
+	type StorageChoice,
+	type WalletMode,
+	normalizeScaffoldConfig,
 } from "../lib/scaffold-config.js";
 import { buildScaffoldFileMap, writeScaffoldFiles } from "../lib/write-scaffold.js";
 
@@ -21,6 +23,7 @@ const DEFAULTS = {
 	storage: "postgres-drizzle" as StorageChoice,
 	queue: "bullmq-redis" as QueueChoice,
 	hosting: "skip" as HostingHint,
+	walletMode: "private-key" as WalletMode,
 	generateWalletNow: true,
 };
 
@@ -101,34 +104,44 @@ export const runCreate = async (
 				message: "HTTP framework",
 				defaultValue: DEFAULTS.framework,
 				options: [
-					{ value: "fastify", label: "fastify" },
+					{ value: "fastify", label: "fastify (Node)" },
+					{ value: "hono-workers", label: "hono on Cloudflare Workers" },
 					{ value: "none", label: "none (bring your own)" },
 				],
 			});
 
-	const storage = useDefaults
-		? DEFAULTS.storage
-		: await prompter.select<StorageChoice>({
-				name: "storage",
-				message: "Storage",
-				defaultValue: DEFAULTS.storage,
-				options: [
-					{ value: "postgres-drizzle", label: "postgres + drizzle" },
-					{ value: "none", label: "none" },
-				],
-			});
+	// Workers can't run pg/bullmq, so skip those prompts entirely instead
+	// of letting the user pick something that the normalizer would just
+	// flatten back to "none".
+	const isWorkers = framework === "hono-workers";
 
-	const queue = useDefaults
-		? DEFAULTS.queue
-		: await prompter.select<QueueChoice>({
-				name: "queue",
-				message: "Queue",
-				defaultValue: DEFAULTS.queue,
-				options: [
-					{ value: "bullmq-redis", label: "bullmq + redis" },
-					{ value: "none", label: "none" },
-				],
-			});
+	const storage = isWorkers
+		? "none"
+		: useDefaults
+			? DEFAULTS.storage
+			: await prompter.select<StorageChoice>({
+					name: "storage",
+					message: "Storage",
+					defaultValue: DEFAULTS.storage,
+					options: [
+						{ value: "postgres-drizzle", label: "postgres + drizzle" },
+						{ value: "none", label: "none" },
+					],
+				});
+
+	const queue = isWorkers
+		? "none"
+		: useDefaults
+			? DEFAULTS.queue
+			: await prompter.select<QueueChoice>({
+					name: "queue",
+					message: "Queue",
+					defaultValue: DEFAULTS.queue,
+					options: [
+						{ value: "bullmq-redis", label: "bullmq + redis" },
+						{ value: "none", label: "none" },
+					],
+				});
 
 	const hosting = useDefaults
 		? DEFAULTS.hosting
@@ -145,11 +158,35 @@ export const runCreate = async (
 				],
 			});
 
+	// Charge intent can run address-only — buyer pays gas in USDC, so the
+	// service never needs the seller's private key. Session intent always
+	// needs a key (seller signs openChannel/closeChannel).
+	const walletMode: WalletMode =
+		intent === "charge"
+			? useDefaults
+				? DEFAULTS.walletMode
+				: await prompter.select<WalletMode>({
+						name: "walletMode",
+						message: "Wallet mode",
+						defaultValue: "address-only",
+						options: [
+							{
+								value: "address-only",
+								label: "address-only — service holds no key (recommended for charge)",
+							},
+							{ value: "private-key", label: "private-key — service signs" },
+						],
+					})
+			: "private-key";
+
 	const generateWalletNow = useDefaults
 		? DEFAULTS.generateWalletNow
 		: await prompter.confirm({
 				name: "generateWalletNow",
-				message: "Generate a wallet now?",
+				message:
+					walletMode === "address-only"
+						? "Generate an address now? (private key will be printed once and not stored on disk)"
+						: "Generate a wallet now?",
 				defaultValue: true,
 			});
 
@@ -187,7 +224,7 @@ export const runCreate = async (
 		}
 	}
 
-	const config: ScaffoldConfig = {
+	const config: ScaffoldConfig = normalizeScaffoldConfig({
 		targetDir,
 		serviceName,
 		intent,
@@ -198,10 +235,11 @@ export const runCreate = async (
 		storage,
 		queue,
 		hosting,
+		walletMode,
 		generateWalletNow,
 		...(wallet ? { wallet } : {}),
 		...(prefundTxHash ? { prefundTxHash } : {}),
-	};
+	});
 
 	if (existsSync(targetDir)) {
 		// Write overwrites files; caller should've chosen an empty dir. Only
@@ -214,12 +252,14 @@ export const runCreate = async (
 
 	const files = buildScaffoldFileMap(config);
 
-	// Append the MPP secret to the generated .env so the scaffold runs out
-	// of the box without another CLI call.
+	// Append the MPP secret so the scaffold runs out of the box. Workers
+	// scaffold writes to `.dev.vars` (consumed by `wrangler dev`); fastify
+	// uses `.env`.
 	if (wallet) {
-		const existing = files[".env"] ?? "";
+		const secretsFile = config.framework === "hono-workers" ? ".dev.vars" : ".env";
+		const existing = files[secretsFile] ?? "";
 		const mppKey = generateMppSecretKey();
-		files[".env"] = `${existing}MPP_SECRET_KEY=${mppKey}\n`;
+		files[secretsFile] = `${existing}MPP_SECRET_KEY=${mppKey}\n`;
 	}
 
 	await writeScaffoldFiles(targetDir, files);

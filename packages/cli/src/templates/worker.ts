@@ -15,7 +15,12 @@ export const makeQueues = (redisUrl: string) => ({
 export type Queues = ReturnType<typeof makeQueues>;
 `;
 
-export const workerIndexTemplate = (): string => `import "dotenv/config";
+export const workerIndexTemplate = (config: ScaffoldConfig): string => {
+	const addressOnly = config.walletMode === "address-only";
+	const walletLine = addressOnly
+		? "\t\twalletAddress: env.WALLET_ADDRESS as `0x${string}`,"
+		: "\t\twalletPrivateKey: env.WALLET_PRIVATE_KEY as `0x${string}`,";
+	return `import "dotenv/config";
 import { createPaywrapMpp, redisStore } from "@zeroclickai/paywrap/mpp";
 import IORedis from "ioredis";
 import { parseEnv } from "../core/env.js";
@@ -25,7 +30,7 @@ const main = async () => {
 \tconst env = parseEnv(process.env);
 \tconst mppxRedis = new IORedis(env.REDIS_URL, { db: 9, maxRetriesPerRequest: null });
 \tconst mpp = createPaywrapMpp({
-\t\twalletPrivateKey: env.WALLET_PRIVATE_KEY as \`0x\${string}\`,
+${walletLine}
 \t\tpublicBaseUrl: env.PUBLIC_BASE_URL,
 \t\tmppSecretKey: env.MPP_SECRET_KEY,
 \t\ttempoRpcUrl: env.TEMPO_RPC_URL,
@@ -46,9 +51,14 @@ main().catch((e) => {
 \tprocess.exit(1);
 });
 `;
+};
 
 export const workerStartTemplate = (config: ScaffoldConfig): string => {
 	const isSession = config.intent === "session";
+	// Session intent always signs (closeSessionOnChain). Charge intent's
+	// reaper just touches upstream state — no signing required, so accept
+	// the base `PaywrapMpp` to support address-only mode.
+	const mppType = isSession ? "PaywrapMppKeyed" : "PaywrapMpp";
 	const cronBlock = isSession
 		? `\tconst sessionSettle = makeSessionSettleJob(mpp);
 \tconst sessionInterval = setInterval(
@@ -73,7 +83,7 @@ export const workerStartTemplate = (config: ScaffoldConfig): string => {
 		? `import { makeSessionSettleJob } from "./jobs/session-settle-job.js";\n`
 		: `import { reaperJob } from "./jobs/reaper-job.js";\n`;
 
-	return `import type { PaywrapMppKeyed } from "@zeroclickai/paywrap/mpp";
+	return `import type { ${mppType} } from "@zeroclickai/paywrap/mpp";
 import { Worker } from "bullmq";
 import type { Env } from "../core/env.js";
 ${cronImport}import { type ThingJobData, makeConnection } from "./queue.js";
@@ -86,12 +96,8 @@ export type WorkerRuntime = {
 /**
  * BullMQ worker + cron drivers. For session-intent scaffolds we also schedule
  * the on-chain close job so vouchers don't pile up in mppx's store forever.
- *
- * \`mpp\` is typed as \`PaywrapMppKeyed\` because the scaffolded entrypoint always
- * constructs the bundle with \`walletPrivateKey\`; on-chain settle helpers
- * (\`closeSessionOnChain\`) require the signing account.
  */
-export const startWorkerRuntime = (env: Env, mpp: PaywrapMppKeyed): WorkerRuntime => {
+export const startWorkerRuntime = (env: Env, mpp: ${mppType}): WorkerRuntime => {
 \tconst connection = makeConnection(env.REDIS_URL);
 \tconst worker = new Worker<ThingJobData>(
 \t\t"things",

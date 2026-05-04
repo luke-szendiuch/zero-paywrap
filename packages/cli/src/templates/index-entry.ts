@@ -10,6 +10,7 @@ export const indexEntryTemplate = (config: ScaffoldConfig): string => {
 	const usePg = config.intent === "session" && config.storage === "postgres-drizzle";
 	const useRedis = config.queue === "bullmq-redis";
 	const useResourceClient = config.intent === "charge";
+	const addressOnly = config.walletMode === "address-only";
 
 	const imports: string[] = [
 		`import "dotenv/config";`,
@@ -46,7 +47,11 @@ export const indexEntryTemplate = (config: ScaffoldConfig): string => {
 		setup.push("\tconst store = memoryStore();");
 	}
 	setup.push("\tconst mpp = createPaywrapMpp({");
-	setup.push("\t\twalletPrivateKey: env.WALLET_PRIVATE_KEY as `0x${string}`,");
+	if (addressOnly) {
+		setup.push("\t\twalletAddress: env.WALLET_ADDRESS as `0x${string}`,");
+	} else {
+		setup.push("\t\twalletPrivateKey: env.WALLET_PRIVATE_KEY as `0x${string}`,");
+	}
 	setup.push("\t\tpublicBaseUrl: env.PUBLIC_BASE_URL,");
 	setup.push("\t\tmppSecretKey: env.MPP_SECRET_KEY,");
 	setup.push("\t\ttempoRpcUrl: env.TEMPO_RPC_URL,");
@@ -57,12 +62,16 @@ export const indexEntryTemplate = (config: ScaffoldConfig): string => {
 
 	const ctxLines: string[] = [
 		"\t\tenv,",
-		"\t\twalletAddress: mpp.account.address,",
+		addressOnly
+			? "\t\twalletAddress: mpp.walletAddress,"
+			: "\t\twalletAddress: mpp.account.address,",
 		"\t\tmppx: mpp.mppx,",
 		"\t\tchannelStore: mpp.channelStore,",
-		"\t\tmppxClient: mpp.client,",
-		"\t\tmppxAccount: mpp.account,",
 	];
+	if (!addressOnly) {
+		ctxLines.push("\t\tmppxClient: mpp.client,");
+		ctxLines.push("\t\tmppxAccount: mpp.account,");
+	}
 	if (usePg) ctxLines.push("\t\tdb,");
 	if (useResourceClient) ctxLines.push("\t\tresourceClient: upstreamClient,");
 	if (useRedis) {
@@ -118,7 +127,7 @@ ${ctxLines.join("\n")}
 ${mount.join("\n")}
 
 \tawait app.listen({ port: env.PORT, host: "0.0.0.0" });
-\tapp.log.info({ port: env.PORT, wallet: mpp.account.address }, "http_listening");
+\tapp.log.info({ port: env.PORT, wallet: ${addressOnly ? "mpp.walletAddress" : "mpp.account.address"} }, "http_listening");
 
 ${workerBlock}
 ${shutdown.join("\n")}

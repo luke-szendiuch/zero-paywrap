@@ -11,10 +11,12 @@ export const envSchemaTemplate = (config: ScaffoldConfig): string => {
 		"\tPORT: z.coerce.number().default(3000),",
 		`\tLOG_LEVEL: z.enum(["trace", "debug", "info", "warn", "error"]).default("info"),`,
 		"\tPUBLIC_BASE_URL: z.string().url(),",
-		"\tWALLET_PRIVATE_KEY: z.string().regex(/^0x[0-9a-fA-F]{64}$/),",
+		config.walletMode === "address-only"
+			? "\tWALLET_ADDRESS: z.string().regex(/^0x[0-9a-fA-F]{40}$/),"
+			: "\tWALLET_PRIVATE_KEY: z.string().regex(/^0x[0-9a-fA-F]{64}$/),",
 		"\tMPP_SECRET_KEY: z.string().min(32),",
 		"\tTEMPO_RPC_URL: z.string().url(),",
-		`\tZERO_API_URL: z.string().url().default("https://api.zero.run"),`,
+		`\tZERO_API_URL: z.string().url().default("https://api.zero.xyz"),`,
 		`\tSKU_PRICE_USDC_MICRO: z.coerce.bigint().default(${
 			Math.round(Number(config.priceUsdc) * 1_000_000) || 20_000
 		}n),`,

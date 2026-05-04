@@ -1,12 +1,12 @@
 export const reaperJobTemplate =
-	(): string => `import type { PaywrapMppKeyed } from "@zeroclickai/paywrap/mpp";
+	(): string => `import type { PaywrapMpp } from "@zeroclickai/paywrap/mpp";
 import type { Env } from "../../core/env.js";
 
-// The CLI scaffolder always wires \`createPaywrapMpp({ walletPrivateKey: ... })\`
-// (see worker/index.ts), so the runtime bundle is always full mode. Reference
-// PaywrapMppKeyed here so callers writing custom reaper logic that touches
-// \`mpp.account\` / \`mpp.client\` get the correct non-optional types.
-export type ReaperContext = { env: Env; mpp: PaywrapMppKeyed };
+// Charge-intent reapers don't sign, so we accept the base \`PaywrapMpp\` —
+// this works with both private-key and address-only scaffolds. If your
+// reaper needs the signing account (rare for charge), narrow to
+// \`PaywrapMppKeyed\` and switch the scaffold to private-key mode.
+export type ReaperContext = { env: Env; mpp: PaywrapMpp };
 
 /**
  * Reaper — periodic cleanup for orphaned/expired upstream resources.
