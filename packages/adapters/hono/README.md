@@ -2,6 +2,212 @@
 
 Hono adapter for [`@zeroclickai/paywrap`](../../kit/). Runs on Cloudflare Workers, Node, Bun, and anywhere else Hono runs.
 
+## Getting started on Cloudflare Workers
+
+End-to-end path from empty directory to a deployed, paywalled Worker. A complete working version of every step lives in [`examples/hono-worker/`](../../../examples/hono-worker/) — copy from there if you want to skip the typing.
+
+### 1. Prerequisites
+
+- Node 20+ and a package manager (pnpm shown below; npm/yarn/bun work).
+- A Cloudflare account and `wrangler` logged in: `npx wrangler login`.
+- A Tempo wallet **address** to receive funds (just the `0x…` address — no key needed for charge-intent; the buyer signs and pays gas in USDC). Provision a private key only if you plan to use session-intent or `feePayer: true` charge — see [step 5](#5-set-secrets).
+- A 32-byte HMAC secret for signing MPP challenges: `openssl rand -hex 32`. The HMAC is keyed off `MPP_SECRET_KEY`, not the wallet — challenge signing does not require a private key.
+
+### 2. Scaffold the project
+
+```sh
+mkdir my-paywalled-worker && cd my-paywalled-worker
+pnpm init
+pnpm add hono @zeroclickai/paywrap @zeroclickai/paywrap-adapter-hono viem
+pnpm add -D wrangler typescript @cloudflare/workers-types
+```
+
+`tsconfig.json` minimum:
+
+```json
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "types": ["@cloudflare/workers-types"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true
+  }
+}
+```
+
+### 3. `wrangler.toml`
+
+```toml
+name = "my-paywalled-worker"
+main = "src/worker.ts"
+compatibility_date = "2024-12-01"
+
+# REQUIRED: mppx pulls `node:util` transitively. Without this flag the
+# Worker will fail to start.
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+# Public URL of this Worker. Used as the MPP realm — payers verify against
+# this exact origin, so it must match what callers hit.
+PUBLIC_BASE_URL = "https://my-paywalled-worker.<your-subdomain>.workers.dev"
+TEMPO_RPC_URL   = "https://rpc.tempo.xyz"
+# Charge-intent only needs the receive address. Swap for WALLET_PRIVATE_KEY
+# (set via `wrangler secret put`) only if you add session-intent routes.
+WALLET_ADDRESS  = "0xYourSellerReceiveAddress"
+
+# Created in step 4. Replace the id after `wrangler kv namespace create`.
+[[kv_namespaces]]
+binding = "PAYWRAP_KV"
+id = "REPLACE_WITH_REAL_NAMESPACE_ID"
+```
+
+### 4. Create the KV namespace
+
+KV is the durable store for MPP challenge-id replay protection. Charge-intent only needs replay protection, which is safe under KV's last-write-wins semantics.
+
+```sh
+npx wrangler kv namespace create PAYWRAP_KV
+```
+
+Paste the returned `id` into `wrangler.toml` under `[[kv_namespaces]]`.
+
+### 5. Set secrets
+
+Pulled from `c.env` per request — never commit them.
+
+```sh
+npx wrangler secret put MPP_SECRET_KEY       # 32-byte hex from openssl
+```
+
+**Skip `WALLET_PRIVATE_KEY` for charge-intent.** Charge broadcasts the *buyer-signed* raw Tempo tx (`eth_sendRawTransaction`), so the seller never needs to hold a key. Your `WALLET_ADDRESS` from `wrangler.toml` is the receive address; that's it.
+
+You only need a private key if any route on this Worker uses:
+
+- `intent: "session"` — the server signs `openChannel` / `closeChannel` and pays gas for them in USDC.
+- `feePayer: true` on a charge route — the server sponsors the buyer's gas.
+
+If either applies, run `wrangler secret put WALLET_PRIVATE_KEY` instead of setting `WALLET_ADDRESS`, and switch to the keyed factory in step 6.
+
+### 6. Write the Worker
+
+`src/worker.ts`:
+
+```ts
+import { createHonoApp, mppGated } from "@zeroclickai/paywrap-adapter-hono";
+import { buildPaywrapJson } from "@zeroclickai/paywrap/manifest";
+import {
+  type MinimalKVNamespace,
+  createPaywrapMpp,
+  workersKvStore,
+} from "@zeroclickai/paywrap/mpp";
+
+export type Env = {
+  PAYWRAP_KV: MinimalKVNamespace;
+  WALLET_ADDRESS: string;       // receive address — charge-intent only
+  MPP_SECRET_KEY: string;       // HMAC for challenge signing
+  PUBLIC_BASE_URL: string;
+  TEMPO_RPC_URL: string;
+};
+
+const SCOPE = "echo:1" as const;
+const PRICE_MICRO = 10_000n; // 0.01 USDC (6 decimals)
+
+// Factory ctx — Worker bindings are per-request, so we build mpp inside
+// the factory rather than at module load. Address-only mode: the buyer
+// signs and pays gas, so no WALLET_PRIVATE_KEY is needed. To add
+// session-intent or `feePayer: true` later, swap `walletAddress` for
+// `walletPrivateKey` (sourced from `wrangler secret put`).
+const app = createHonoApp<{
+  Bindings: Env;
+  mppx: ReturnType<typeof createPaywrapMpp>["mppx"];
+  mppxChannelStore: ReturnType<typeof createPaywrapMpp>["channelStore"];
+}>((c) => {
+  const mpp = createPaywrapMpp({
+    walletAddress: c.env.WALLET_ADDRESS as `0x${string}`,
+    mppSecretKey: c.env.MPP_SECRET_KEY,
+    publicBaseUrl: c.env.PUBLIC_BASE_URL,
+    tempoRpcUrl: c.env.TEMPO_RPC_URL,
+    store: workersKvStore(c.env.PAYWRAP_KV),
+  });
+  return { mppx: mpp.mppx, mppxChannelStore: mpp.channelStore };
+});
+
+app.get("/healthz", (c) => c.json({ status: "ok" }));
+
+// REQUIRED for service discovery — Zero's indexer probes this path.
+// If you also want to be enumerable in the catalog, also serve
+// `/openapi.json` via `buildOpenApiSpec` from the same kit module.
+app.get("/.well-known/paywrap.json", (c) => {
+  return c.json(
+    buildPaywrapJson({
+      wallet: c.env.WALLET_ADDRESS as `0x${string}`,
+      paidRoutes: [
+        {
+          method: "POST",
+          path: "/v1/echo",
+          protocol: "mpp",
+          sku: "echo:1",
+          priceUsdcMicro: PRICE_MICRO.toString(),
+          pricingVersion: 1,
+          description: "Echo the request body. Charged per request.",
+        },
+      ],
+      freeRoutes: [
+        { method: "GET", path: "/healthz" },
+        { method: "GET", path: "/.well-known/paywrap.json" },
+      ],
+    }),
+  );
+});
+
+app.post(
+  "/v1/echo",
+  mppGated({ scope: SCOPE, amount: PRICE_MICRO, intent: "charge" }),
+  async (c) => c.json({ echoed: await c.req.json(), payer: c.var.payer }),
+);
+
+export default {
+  fetch: (req: Request, env: Env, ctx: ExecutionContext) =>
+    app.fetch(req, env, ctx),
+};
+```
+
+### 7. Run locally then deploy
+
+```sh
+npx wrangler dev      # local Worker, hits real Tempo RPC + your KV
+npx wrangler deploy
+```
+
+After deploying, update `PUBLIC_BASE_URL` in `wrangler.toml` to the actual `*.workers.dev` (or custom domain) URL **and redeploy** — it's the realm callers verify against, so a mismatch breaks all paid routes.
+
+### 8. Verify it works
+
+```sh
+# Free route — should 200.
+curl https://<your-worker>/healthz
+
+# Paid route — should 402 with an MPP challenge in WWW-Authenticate.
+curl -i -X POST https://<your-worker>/v1/echo -d '{}'
+```
+
+The 402 response carries the `WWW-Authenticate: MPP ...` header your client uses to construct a payment. Any MPP-aware client (e.g. Zero's `paywrap-client`) will pay and retry transparently.
+
+### What you integrated from paywrap
+
+| Import | Purpose |
+| --- | --- |
+| `createPaywrapMpp` (`/mpp`) | Builds the mppx instance + channel store from your wallet/secret/RPC. |
+| `workersKvStore` (`/mpp`) | Workers KV–backed replay-protection store. Required for production; in-memory dies with the isolate. |
+| `createHonoApp` (adapter) | Hono app pre-wired with the `paywrapApp` ctx. Pass a factory because Worker bindings are per-request. |
+| `mppGated` (adapter) | Per-route middleware that issues 402 + verifies + settles. |
+| `buildPaywrapJson` (`/manifest`) | Builds the `/.well-known/paywrap.json` discovery manifest. Pair with `buildOpenApiSpec` if you want to be indexed by Zero. |
+
+Everything else in this README (per-request pricing, `preCheck` validation, x402, custom `c.var` typing) is optional polish on top of the above.
+
 ## Quickstart (Cloudflare Workers)
 
 Two equivalent ways to wire up the paywrap app context. Use whichever matches your ctx lifetime.
