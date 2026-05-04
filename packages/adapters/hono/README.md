@@ -11,7 +11,21 @@ End-to-end path from empty directory to a deployed, paywalled Worker. A complete
 - Node 20+ and a package manager (pnpm shown below; npm/yarn/bun work).
 - A Cloudflare account and `wrangler` logged in: `npx wrangler login`.
 - A Tempo wallet **address** to receive funds (just the `0x…` address — no key needed for charge-intent; the buyer signs and pays gas in USDC). Provision a private key only if you plan to use session-intent or `feePayer: true` charge — see [step 5](#5-set-secrets).
-- A 32-byte HMAC secret for signing MPP challenges: `openssl rand -hex 32`. The HMAC is keyed off `MPP_SECRET_KEY`, not the wallet — challenge signing does not require a private key.
+- A 32-byte HMAC secret for signing MPP challenges. The HMAC is keyed off `MPP_SECRET_KEY`, not the wallet — challenge signing does not require a private key.
+
+**Bootstrap both with the paywrap CLI** (recommended — one command, no extra tools):
+
+```sh
+npx @zeroclickai/paywrap-cli generate-secrets
+# prints, in env-file format:
+#   WALLET_PRIVATE_KEY=0x…   ← only needed for session-intent / feePayer:true
+#   WALLET_ADDRESS=0x…       ← what you'll set in wrangler.toml for charge-intent
+#   MPP_SECRET_KEY=…         ← what you'll set as a wrangler secret in step 5
+```
+
+For charge-intent only, copy `WALLET_ADDRESS` and `MPP_SECRET_KEY` and **discard the printed `WALLET_PRIVATE_KEY`** — you don't need it and shouldn't store it. For session-intent / `feePayer: true`, store the private key as a `wrangler secret` (step 5) and never commit it.
+
+If you'd rather not use the CLI: any EOA address works for `WALLET_ADDRESS`, and `openssl rand -hex 32` produces a valid `MPP_SECRET_KEY`.
 
 ### 2. Scaffold the project
 
