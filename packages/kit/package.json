@@ -1,6 +1,6 @@
 {
 	"name": "@zeroclickai/paywrap",
-	"version": "0.0.15",
+	"version": "0.0.16",
 	"description": "Framework-agnostic primitives for building agent-callable paid APIs over HTTP: MPP/x402 gates, OpenAPI payment metadata, credential verification, and settlement logs.",
 	"type": "module",
 	"license": "MIT",
