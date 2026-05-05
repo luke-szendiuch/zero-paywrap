@@ -1,6 +1,6 @@
 {
 	"name": "@zeroclickai/paywrap-adapter-hono",
-	"version": "0.0.15",
+	"version": "0.0.16",
 	"type": "module",
 	"description": "Hono adapter for @zeroclickai/paywrap: route-level MPP/x402 gates, pre-settlement checks, and Worker-friendly paid API context.",
 	"license": "MIT",
