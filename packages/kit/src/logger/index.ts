@@ -57,7 +57,19 @@ export type PaymentSettledEvent = PaywrapLogEventBase & {
 export type PaymentFailedEvent = PaywrapLogEventBase & {
 	kind: "payment_failed";
 	protocol: "mpp" | "x402";
-	stage: "verify" | "settle" | "precheck" | "unknown";
+	/**
+	 * Where in the request lifecycle the failure surfaced.
+	 * - `precheck` — caller-supplied `preCheck` returned false / threw.
+	 * - `verify` — credential verification failed (bad signature, expired,
+	 *   scope mismatch, channel state missing).
+	 * - `settle` — on-chain settle (charge intent) or session/metered close
+	 *   submission failed.
+	 * - `post_handler` — handler ran but threw afterwards. Emitted by
+	 *   `mppGated({ refundOnFailure: true })` when it rolls back a session
+	 *   voucher; the `reason` carries `voucher_rolled_back:…`.
+	 * - `unknown` — anything else.
+	 */
+	stage: "verify" | "settle" | "precheck" | "post_handler" | "unknown";
 	reason: string;
 	scope?: string;
 	route?: string;

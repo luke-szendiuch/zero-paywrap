@@ -339,3 +339,222 @@ describe("mppGated — valid credentials", () => {
 		expect(verifySpy).not.toHaveBeenCalled();
 	});
 });
+
+describe("mppGated — refundOnFailure (session intent)", () => {
+	const seedSession = async (
+		mpp: ReturnType<typeof createPaywrapMpp>,
+		label: string,
+		scope: string,
+		cumulativeAmount: bigint,
+	) => {
+		const payer = privateKeyToAccount(generatePrivateKey());
+		const channelId = channelIdFromLabel(label);
+		await seedChannel({
+			channelStore: mpp.channelStore,
+			channelId,
+			payer: payer.address,
+			payee: mpp.account.address,
+			escrowContract: TEMPO_ESCROW,
+			chainId: TEMPO_CHAIN_ID,
+			deposit: 10_000_000n,
+		});
+		const header = await buildVoucherCredential({
+			payer,
+			channelId,
+			cumulativeAmount,
+			escrowContract: TEMPO_ESCROW,
+			chainId: TEMPO_CHAIN_ID,
+			recipient: mpp.account.address,
+			realm: REALM,
+			secretKey: SECRET_KEY,
+			scope,
+		});
+		return { payer, channelId, header };
+	};
+
+	it("rolls back highestVoucher on handler throw", async () => {
+		const { app, mpp } = makeApp();
+		const { channelId, header } = await seedSession(mpp, "rof-throw", "paid:1", 50_000n);
+		app.post(
+			"/paid",
+			mppGated({
+				scope: "paid:1",
+				amount: 50_000n,
+				intent: "session",
+				refundOnFailure: true,
+			}),
+			() => {
+				throw new Error("upstream exploded");
+			},
+		);
+		// Hono surfaces the throw as a 500 by default; consume the error so
+		// vitest doesn't mark it unhandled.
+		app.onError((_err, c) => c.json({ error: "internal" }, 500));
+
+		const res = await app.request("/paid", {
+			method: "POST",
+			headers: { authorization: header },
+		});
+		expect(res.status).toBe(500);
+
+		const after = await mpp.channelStore.getChannel(channelId);
+		// Voucher was advanced by verify, then rolled back to the prior null.
+		expect(after?.highestVoucherAmount).toBe(0n);
+		expect(after?.highestVoucher).toBeNull();
+	});
+
+	it("rolls back to a prior voucher across two calls (second fails)", async () => {
+		const { app, mpp } = makeApp();
+		const { payer, channelId } = await seedSession(mpp, "rof-second", "paid:1", 50_000n);
+
+		const okHeader = await buildVoucherCredential({
+			payer,
+			channelId,
+			cumulativeAmount: 50_000n,
+			escrowContract: TEMPO_ESCROW,
+			chainId: TEMPO_CHAIN_ID,
+			recipient: mpp.account.address,
+			realm: REALM,
+			secretKey: SECRET_KEY,
+			scope: "paid:1",
+		});
+		const failHeader = await buildVoucherCredential({
+			payer,
+			channelId,
+			cumulativeAmount: 100_000n,
+			escrowContract: TEMPO_ESCROW,
+			chainId: TEMPO_CHAIN_ID,
+			recipient: mpp.account.address,
+			realm: REALM,
+			secretKey: SECRET_KEY,
+			scope: "paid:1",
+		});
+
+		let shouldThrow = false;
+		app.post(
+			"/paid",
+			mppGated({
+				scope: "paid:1",
+				amount: 50_000n,
+				intent: "session",
+				refundOnFailure: true,
+			}),
+			(c) => {
+				if (shouldThrow) throw new Error("upstream exploded");
+				return c.json({ ok: true });
+			},
+		);
+		app.onError((_err, c) => c.json({ error: "internal" }, 500));
+
+		// First call succeeds → highestVoucher should advance to 50_000.
+		const res1 = await app.request("/paid", {
+			method: "POST",
+			headers: { authorization: okHeader },
+		});
+		expect(res1.status).toBe(200);
+		const afterFirst = await mpp.channelStore.getChannel(channelId);
+		expect(afterFirst?.highestVoucherAmount).toBe(50_000n);
+
+		// Second call fails → should roll back to the prior 50_000 voucher.
+		shouldThrow = true;
+		const res2 = await app.request("/paid", {
+			method: "POST",
+			headers: { authorization: failHeader },
+		});
+		expect(res2.status).toBe(500);
+		const afterSecond = await mpp.channelStore.getChannel(channelId);
+		expect(afterSecond?.highestVoucherAmount).toBe(50_000n); // not 100_000
+		expect(afterSecond?.highestVoucher?.cumulativeAmount).toBe(50_000n);
+	});
+
+	it("does NOT roll back when refundOnFailure is false (default)", async () => {
+		const { app, mpp } = makeApp();
+		const { channelId, header } = await seedSession(mpp, "rof-default", "paid:1", 50_000n);
+		app.post("/paid", mppGated({ scope: "paid:1", amount: 50_000n, intent: "session" }), () => {
+			throw new Error("upstream exploded");
+		});
+		app.onError((_err, c) => c.json({ error: "internal" }, 500));
+
+		await app.request("/paid", {
+			method: "POST",
+			headers: { authorization: header },
+		});
+		const after = await mpp.channelStore.getChannel(channelId);
+		// Voucher remained advanced — buyer is billed for the failed call.
+		expect(after?.highestVoucherAmount).toBe(50_000n);
+	});
+
+	it("emits payment_failed { stage: 'post_handler', reason: 'voucher_rolled_back…' }", async () => {
+		const mpp = createPaywrapMpp({
+			walletPrivateKey: KNOWN_PK,
+			publicBaseUrl: `https://${REALM}`,
+			mppSecretKey: SECRET_KEY,
+			tempoRpcUrl: "https://rpc.example/tempo",
+			store: memoryStore(),
+			channelStateTtl: Number.POSITIVE_INFINITY,
+		});
+		const events: unknown[] = [];
+		const app = createHonoApp({
+			mppx: mpp.mppx,
+			mppxChannelStore: mpp.channelStore,
+			paywrapLogger: (e) => {
+				events.push(e);
+			},
+		});
+		const { header } = await seedSession(mpp, "rof-event", "paid:1", 50_000n);
+		app.post(
+			"/paid",
+			mppGated({
+				scope: "paid:1",
+				amount: 50_000n,
+				intent: "session",
+				refundOnFailure: true,
+			}),
+			() => {
+				throw new Error("oops");
+			},
+		);
+		app.onError((_err, c) => c.json({ error: "internal" }, 500));
+
+		await app.request("/paid", {
+			method: "POST",
+			headers: { authorization: header },
+		});
+
+		const failed = events.find(
+			(e): e is { kind: string; stage: string; reason: string } =>
+				typeof e === "object" &&
+				e !== null &&
+				(e as { kind?: unknown }).kind === "payment_failed" &&
+				(e as { stage?: unknown }).stage === "post_handler",
+		);
+		expect(failed).toBeDefined();
+		expect(failed?.reason).toMatch(/^voucher_rolled_back:ok:/);
+	});
+
+	it("does not roll back for charge intent (no-op)", async () => {
+		// charge intent doesn't have a session voucher to roll back; the
+		// option should be a quiet no-op rather than break anything.
+		const { app, mpp } = makeApp();
+		const { channelId, header } = await seedSession(mpp, "rof-charge", "paid:1", 50_000n);
+		app.post(
+			"/paid",
+			mppGated({
+				scope: "paid:1",
+				amount: 50_000n,
+				intent: "session", // still session — but mark refundOnFailure and verify it's session-scoped
+				refundOnFailure: true,
+			}),
+			(c) => c.json({ ok: true }),
+		);
+
+		const res = await app.request("/paid", {
+			method: "POST",
+			headers: { authorization: header },
+		});
+		expect(res.status).toBe(200);
+		const after = await mpp.channelStore.getChannel(channelId);
+		// Successful call, no rollback — voucher advances normally.
+		expect(after?.highestVoucherAmount).toBe(50_000n);
+	});
+});

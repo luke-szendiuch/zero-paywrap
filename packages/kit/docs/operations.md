@@ -124,6 +124,35 @@ const { txHash } = await refundCharge(mpp, {
 
 A `paywrap_refund_sent` JSON line is emitted to `console.error` on success. Pairing with `paywrap_refund_owed` makes reconciliation a single grep across log streams: every owed event should eventually have a matching sent event (or an explicit operator decision to deny).
 
+### Session intent: rollback instead of refund
+
+For session-intent routes there's no `refundCharge` to call — the buyer's deposit sits in escrow until close. A failed call doesn't need a refund tx at all; the seller can just **not bill it** by rolling back the voucher. The escrow contract refunds the unspent deposit to the buyer in the same `close()` tx.
+
+The Hono adapter does this automatically when you pass `refundOnFailure: true`:
+
+```ts
+app.post(
+	"/v1/search",
+	mppGated({
+		scope: "search:v1",
+		intent: "session",
+		amount: 500n,
+		refundOnFailure: true,
+	}),
+	async (c) => c.json(await upstream.search(c.var.payer)),
+);
+```
+
+For non-throwing refund decisions (audit reversal, content moderation, etc.), call the kit primitive:
+
+```ts
+import { rollbackSessionVoucher } from "@zeroclickai/paywrap/mpp";
+
+await rollbackSessionVoucher(mpp.channelStore, channelId, priorSignedVoucher);
+```
+
+The helper is atomic via `channelStore.updateChannel` and silently no-ops if the channel is finalized, the target equals current, or the target would be below `settledOnChain` (which would brick the on-chain close). Emits `payment_failed { stage: "post_handler" }` events when triggered via `mppGated` so operator dashboards have an audit trail.
+
 ## Observability
 
 Pass a logger to the MPP or x402 factory to emit structured events:

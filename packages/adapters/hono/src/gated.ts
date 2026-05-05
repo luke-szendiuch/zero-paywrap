@@ -7,7 +7,7 @@ import {
 	payerFromCredential,
 } from "@zeroclickai/paywrap/auth";
 import { type LoggerCallback, safeLog, shortFingerprint } from "@zeroclickai/paywrap/logger";
-import { type PaywrapMpp, verifyWithScope } from "@zeroclickai/paywrap/mpp";
+import { type PaywrapMpp, rollbackSessionVoucher, verifyWithScope } from "@zeroclickai/paywrap/mpp";
 import type { Context, MiddlewareHandler } from "hono";
 import { formatUnits } from "viem";
 import type { Hex } from "viem";
@@ -58,6 +58,20 @@ export type MppGatedOptions = {
 	suggestedDeposit?: bigint;
 	unitType?: string;
 	preCheck?: MppGatedPreCheck;
+	/**
+	 * Session-intent only. When `true`, captures the prior `highestVoucher`
+	 * before verify and rolls it back if the handler throws — the failed
+	 * call's amount stays in escrow and refunds to the buyer naturally on
+	 * the next `closeSessionOnChain`.
+	 *
+	 * The error is re-thrown after rollback so Hono's error handler still
+	 * sees it. Has no effect for charge or proof intent (charge settles
+	 * atomically; proof moves no money).
+	 *
+	 * Default: `false`. Failed calls bill the buyer until the seller
+	 * decides otherwise.
+	 */
+	refundOnFailure?: boolean;
 };
 
 type AppLike = {
@@ -201,6 +215,32 @@ export const mppGated = (
 			}
 		}
 
+		// Capture pre-verify voucher state for refund-on-failure rollback.
+		// Only meaningful for session intent — charge settles atomically (no
+		// rollback target), proof moves no money. We read by `channelId` from
+		// the raw credential before verify because verify is what advances
+		// `state.highestVoucher`; reading after would capture the post-advance
+		// value and rollback would be a no-op.
+		const refundOnFailure = opts.refundOnFailure === true && intent === "session";
+		let priorVoucher: NonNullable<
+			Awaited<ReturnType<typeof gatedApp.ctx.mppxChannelStore.getChannel>>
+		>["highestVoucher"] = null;
+		let rollbackChannelId: Hex | null = null;
+		if (refundOnFailure) {
+			const payload = (credential as { payload?: { channelId?: Hex } }).payload;
+			const channelId = payload?.channelId;
+			if (channelId) {
+				try {
+					const state = await gatedApp.ctx.mppxChannelStore.getChannel(channelId);
+					priorVoucher = state?.highestVoucher ?? null;
+					rollbackChannelId = channelId;
+				} catch {
+					// best-effort — if the read fails, we just won't roll back
+					rollbackChannelId = null;
+				}
+			}
+		}
+
 		let verified: VerifiedCredential;
 		try {
 			verified = await verifyWithScope(gatedApp.ctx.mppx, credential, opts.scope);
@@ -262,7 +302,50 @@ export const mppGated = (
 
 		c.set("payer", payer);
 		c.set("verifiedCredential", verified);
-		await next();
+
+		// Wrap next() so we catch handler errors regardless of whether the
+		// app has an `onError` registered. Hono routes thrown errors through
+		// `app.errorHandler` and surfaces them on `c.error` rather than
+		// propagating through middleware — so we check both: try/catch (for
+		// no-onError apps) and `c.error` (for apps with onError).
+		let handlerError: unknown = undefined;
+		try {
+			await next();
+		} catch (err) {
+			handlerError = err;
+		}
+		if (handlerError === undefined && c.error !== undefined) {
+			handlerError = c.error;
+		}
+
+		if (handlerError !== undefined && refundOnFailure && rollbackChannelId) {
+			const reason = handlerError instanceof Error ? handlerError.message : "handler_threw";
+			try {
+				const result = await rollbackSessionVoucher(
+					gatedApp.ctx.mppxChannelStore,
+					rollbackChannelId,
+					priorVoucher,
+				);
+				await safeLog(logger, {
+					v: 1,
+					kind: "payment_failed",
+					timestamp: new Date().toISOString(),
+					protocol: "mpp",
+					stage: "post_handler",
+					reason: `voucher_rolled_back:${result.status === "rolled-back" ? "ok" : `skipped(${result.reason})`}:${reason}`,
+					scope: opts.scope,
+					route,
+				});
+			} catch {
+				// Rollback itself failed — surface via the original error path,
+				// don't shadow the handler error.
+			}
+		}
+		if (handlerError !== undefined) {
+			// Re-throw so apps without onError still get the default 500;
+			// apps with onError already absorbed it.
+			throw handlerError;
+		}
 		await safeLog(logger, {
 			v: 1,
 			kind: "request_completed",

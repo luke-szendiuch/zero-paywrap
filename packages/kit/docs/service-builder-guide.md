@@ -305,6 +305,46 @@ Properties:
 - voucher state lives in the channel store — choose durability that matches your concurrency,
 - closing is idempotent — safe to call from a route, a reaper, and a `waitUntil` hook.
 
+#### Refunds in session intent: just don't bill the failed call
+
+Because the buyer's deposit sits in **escrow** (not the seller wallet) until close, the natural-refund mechanism is "close at a lower amount." The escrow contract automatically refunds `deposit - cumulativeAmount` to the buyer in the same `close()` tx — no separate refund tx needed.
+
+To opt into per-call automatic rollback when the handler throws, pass `refundOnFailure: true`:
+
+```ts
+app.post(
+	"/v1/search",
+	mppGated({
+		scope: "search:v1",
+		intent: "session",
+		amount: 500n,
+		refundOnFailure: true, // ← roll back the voucher on handler throw
+	}),
+	async (c) => {
+		const result = await upstream.search(c.var.payer); // may throw
+		return c.json(result);
+	},
+);
+```
+
+How it works: before verify, the middleware reads the channel's current `highestVoucher`. After verify advances it to include the new call's amount, the handler runs. If the handler throws (or `c.error` is set), the middleware writes the prior voucher back to the channel store. When the seller eventually calls `closeSessionOnChain`, it submits the rolled-back voucher — and the escrow contract refunds the failed call's amount to the buyer along with the rest of the unspent deposit.
+
+Constraints (the rollback helper enforces these and silently no-ops if violated):
+
+- **Channel must not be finalized.** If close already submitted, rollback is a no-op.
+- **Cannot roll back below `settledOnChain`.** If the seller has called `settle()` mid-channel, the rollback target must be `>= settledOnChain` — otherwise the eventual `close()` would revert with `AmountNotIncreasing`. The helper guards against bricking the channel.
+- **Tail-only granularity.** Rollback affects the most recent voucher only. You cannot refund a call from the middle of a session — vouchers are monotonic and you only have valid signatures for points the buyer ratified.
+
+For deliberate (non-throwing) refund decisions — content moderation, post-success policy violations, audit reversals — call the primitive directly:
+
+```ts
+import { rollbackSessionVoucher } from "@zeroclickai/paywrap/mpp";
+
+await rollbackSessionVoucher(mpp.channelStore, channelId, priorSignedVoucher);
+```
+
+Has no effect for charge or proof intent — `refundOnFailure: true` is a quiet no-op for those because charge already settled atomically (use `refundCharge` instead) and proof moves no money.
+
 ### Metered — detail
 <a id="metered-detail"></a>
 

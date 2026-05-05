@@ -400,15 +400,18 @@ app.post(
 
 ```ts
 mppGated({
-  scope,        // string — HMAC-bound to the challenge id; must match across challenge + verify
-  intent?,      // "session" | "charge" | "proof"; defaults to "proof" when amount is omitted,
-                //   "session" when amount > 0. There is NO implicit charge default — pass it
-                //   explicitly for atomic single-shot pricing.
-  amount?,      // bigint micro-USDC. Required for "charge" and "session". Omit for "proof".
-  meta?,        // Record<string, string> echoed into the 402 challenge body and
-                //   surfaced in `payment_required` / `payment_settled` log events. Standard
-                //   keys: `sku`, `pricingVersion`.
-  preCheck?,    // async ({ c, claimedPayer }) => PreCheckResult — see below.
+  scope,             // string — HMAC-bound to the challenge id; must match across challenge + verify
+  intent?,           // "session" | "charge" | "proof"; defaults to "proof" when amount is omitted,
+                     //   "session" when amount > 0. There is NO implicit charge default — pass it
+                     //   explicitly for atomic single-shot pricing.
+  amount?,           // bigint micro-USDC. Required for "charge" and "session". Omit for "proof".
+  meta?,             // Record<string, string> echoed into the 402 challenge body and
+                     //   surfaced in `payment_required` / `payment_settled` log events. Standard
+                     //   keys: `sku`, `pricingVersion`.
+  preCheck?,         // async ({ c, claimedPayer }) => PreCheckResult — see below.
+  refundOnFailure?,  // session intent only. When true, captures the prior highestVoucher
+                     //   pre-verify and rolls it back if the handler throws — failed call's
+                     //   amount stays in escrow and refunds on the next close. See section below.
 })
 ```
 
@@ -426,6 +429,38 @@ type PreCheckResult =
 - `{ ok: "already_done", payer, verifiedCredential }` — skip verify entirely; the route already handled this credential idempotently. The handler still gets typed `c.var.payer` and `c.var.verifiedCredential`.
 
 `claimedPayer` is the address parsed from the credential before verification. It is only a hint — safe for reads and routing decisions, never for irreversible writes. The adapter emits `payment_failed` with `stage: "precheck"` if `preCheck` throws.
+
+## Refund on failure (session intent)
+
+For session-intent routes, pass `refundOnFailure: true` to roll back the voucher when the handler throws — the failed call's amount stays in escrow and refunds to the buyer on the next `closeSessionOnChain`. No separate refund tx, no on-chain side effect on failure: just a write-back to the channel store.
+
+```ts
+app.post(
+  "/v1/search",
+  mppGated({
+    scope: "search:v1",
+    intent: "session",
+    amount: 500n,
+    refundOnFailure: true,
+  }),
+  async (c) => {
+    const result = await upstream.search(c.var.payer); // may throw
+    return c.json(result);
+  },
+);
+```
+
+How it works: pre-verify, the middleware reads the channel's current `highestVoucher`. After verify advances it, the handler runs. On throw (or `c.error`), the middleware writes the prior voucher back via `rollbackSessionVoucher` from `@zeroclickai/paywrap/mpp`. The error is re-thrown so Hono's `onError` still fires.
+
+Constraints (silent no-ops if violated): channel must not be finalized, rollback target must be `>= settledOnChain` (so on-chain `close()` doesn't revert with `AmountNotIncreasing`), and the option is ignored for charge / proof intent. Emits `payment_failed { stage: "post_handler", reason: "voucher_rolled_back:..." }` on every rollback so operator dashboards can audit.
+
+For deliberate (non-throwing) refund decisions, call the kit primitive directly:
+
+```ts
+import { rollbackSessionVoucher } from "@zeroclickai/paywrap/mpp";
+
+await rollbackSessionVoucher(mpp.channelStore, channelId, priorSignedVoucher);
+```
 
 ## Per-request pricing
 
