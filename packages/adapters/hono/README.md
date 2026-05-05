@@ -446,3 +446,31 @@ app.post(
   async (c) => c.json({ ok: true }),
 );
 ```
+
+## Metered routes (`mppMetered`)
+
+For routes whose final price is only known after the handler runs (transcription billed by duration, LLM calls billed by tokens, etc.), use `mppMetered` instead of `mppGated`. The buyer signs an open voucher for a maximum; your handler computes the actual cost and calls `c.var.settle(actual)` before returning.
+
+```ts
+import { mppMetered } from "@zeroclickai/paywrap-adapter-hono";
+
+app.post(
+  "/v1/transcribe",
+  mppMetered({
+    scope: "transcribe:v1",
+    maxAmount: 200_000n,
+    meta: { sku: "transcribe:v1", pricingVersion: "1" },
+  }),
+  async (c) => {
+    const result = await transcribe(await c.req.arrayBuffer());
+    c.var.settle(BigInt(result.costUsdcMicro));
+    return c.json(result);
+  },
+);
+```
+
+The middleware emits a `Payment-Receipt` header with the actual amount; the buyer countersigns a close voucher and POSTs it to a close endpoint your service exposes. Persist that voucher with `persistMeteredCloseVoucher` and submit it on-chain from a scheduled handler with `closeMeteredChannelFromState` (both from `@zeroclickai/paywrap/mpp/metered`).
+
+If the handler forgets to call `settle`, the middleware bills `maxAmount` and emits a `payment_failed` event with `stage: "settle"` — the buyer is over-billed. Always settle.
+
+See the [Service Builder Guide § Metered](../../kit/docs/service-builder-guide.md#metered--detail) for the full persist → reap → close flow.

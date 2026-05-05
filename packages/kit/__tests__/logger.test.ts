@@ -4,6 +4,7 @@ import {
 	type PaywrapLogEvent,
 	composeLoggers,
 	consoleJsonLogger,
+	logRefundOwed,
 	safeLog,
 	shortFingerprint,
 } from "../src/logger/index.js";
@@ -187,6 +188,114 @@ describe("composeLoggers", () => {
 		await expect(composed(sampleEvent)).resolves.toBeUndefined();
 		expect(ok1).toHaveBeenCalledWith(sampleEvent);
 		expect(ok2).toHaveBeenCalledWith(sampleEvent);
+	});
+});
+
+describe("logRefundOwed", () => {
+	it("emits the canonical paywrap_refund_owed shape on stderr", () => {
+		const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		logRefundOwed({
+			payer: "0xabc",
+			sku: "render:v1",
+			amountUsdcMicro: "50000",
+			reason: "upstream_5xx",
+			details: { upstreamStatus: 503 },
+			chargeHash: "ff00",
+			route: "POST /v1/render",
+			timestamp: "2026-04-27T20:00:00Z",
+		});
+		expect(errSpy).toHaveBeenCalledTimes(1);
+		const parsed = JSON.parse(errSpy.mock.calls[0][0] as string);
+		expect(parsed).toEqual({
+			msg: "paywrap_refund_owed",
+			v: 1,
+			timestamp: "2026-04-27T20:00:00Z",
+			payer: "0xabc",
+			sku: "render:v1",
+			amountUsdcMicro: "50000",
+			reason: "upstream_5xx",
+			details: { upstreamStatus: 503 },
+			chargeHash: "ff00",
+			route: "POST /v1/render",
+		});
+	});
+
+	it("auto-fills timestamp when omitted", () => {
+		const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		logRefundOwed({
+			payer: "0xabc",
+			sku: "x:1",
+			amountUsdcMicro: "1",
+			reason: "unknown",
+		});
+		const parsed = JSON.parse(errSpy.mock.calls[0][0] as string);
+		expect(typeof parsed.timestamp).toBe("string");
+		// ISO-8601, trailing Z
+		expect(parsed.timestamp).toMatch(/^\d{4}-\d{2}-\d{2}T.*Z$/);
+	});
+
+	it("omits optional fields when not provided", () => {
+		const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		logRefundOwed({
+			payer: "0xabc",
+			sku: "x:1",
+			amountUsdcMicro: "1",
+			reason: "worker_crash",
+			timestamp: "t",
+		});
+		const parsed = JSON.parse(errSpy.mock.calls[0][0] as string);
+		expect(parsed).not.toHaveProperty("details");
+		expect(parsed).not.toHaveProperty("chargeHash");
+		expect(parsed).not.toHaveProperty("route");
+	});
+
+	it("routes through the provided sink instead of console.error", () => {
+		const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		const sink = vi.fn();
+		logRefundOwed(
+			{
+				payer: "0xabc",
+				sku: "x:1",
+				amountUsdcMicro: "1",
+				reason: "upstream_timeout",
+				timestamp: "t",
+			},
+			sink,
+		);
+		expect(sink).toHaveBeenCalledTimes(1);
+		expect(errSpy).not.toHaveBeenCalled();
+		expect(typeof sink.mock.calls[0][0]).toBe("string");
+	});
+
+	it("returns the emitted event for callers to fan out elsewhere", () => {
+		vi.spyOn(console, "error").mockImplementation(() => {});
+		const event = logRefundOwed({
+			payer: "0xabc",
+			sku: "x:1",
+			amountUsdcMicro: "1",
+			reason: "post_settlement_validation",
+			timestamp: "t",
+		});
+		expect(event.msg).toBe("paywrap_refund_owed");
+		expect(event.v).toBe(1);
+	});
+
+	it("swallows sink errors so observability cannot break the hot path", () => {
+		const exploding = () => {
+			throw new Error("sink down");
+		};
+		expect(() =>
+			logRefundOwed(
+				{
+					payer: "0xabc",
+					sku: "x:1",
+					amountUsdcMicro: "1",
+					reason: "unknown",
+					timestamp: "t",
+				},
+				exploding,
+			),
+		).not.toThrow();
 	});
 });
 

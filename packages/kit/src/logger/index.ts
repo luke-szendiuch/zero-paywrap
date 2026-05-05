@@ -147,6 +147,108 @@ export const safeLog = async (
 export const shortFingerprint = (digest: string): string => digest.slice(0, 16);
 
 /**
+ * Standard reason buckets for `paywrap_refund_owed` events. Refund triage
+ * (operator scripts, dashboards, ledger reconciliation) groups by these,
+ * so adding a new bucket is a contract change — prefer putting service-
+ * specific detail in the event's `details` field instead of inventing a
+ * new reason.
+ *
+ * - `upstream_5xx` — upstream returned a 5xx after settlement.
+ * - `upstream_4xx_post_settlement` — upstream returned 4xx for a request
+ *   the service should have caught in `preCheck` but didn't.
+ * - `upstream_timeout` — network/socket timeout to the upstream.
+ * - `upstream_rate_limit` — upstream returned 429.
+ * - `worker_crash` — handler threw / process died after settlement.
+ * - `post_settlement_validation` — validation only possible after the
+ *   paid side-effect began (e.g. content moderation on generated output).
+ * - `unknown` — fallback when none of the above fit; explain in `details`.
+ */
+export type RefundReason =
+	| "upstream_5xx"
+	| "upstream_4xx_post_settlement"
+	| "upstream_timeout"
+	| "upstream_rate_limit"
+	| "worker_crash"
+	| "post_settlement_validation"
+	| "unknown";
+
+/**
+ * Refund-owed event shape. The `msg: "paywrap_refund_owed"` discriminator
+ * is a fixed grep key — operators run `grep paywrap_refund_owed` across
+ * log streams to build a refund queue. Do not change it.
+ *
+ * Note: this is intentionally NOT part of `PaywrapLogEvent`. The structured
+ * event union is for observability sinks (Datadog, Analytics Engine);
+ * refund-owed is for operator action queues. Different consumer, different
+ * shape (`msg` vs `kind`), different sink (always stderr).
+ */
+export type RefundOwedEvent = {
+	msg: "paywrap_refund_owed";
+	v: 1;
+	timestamp: string;
+	payer: Hex;
+	sku: string;
+	amountUsdcMicro: string;
+	reason: RefundReason;
+	/** Free-form sub-reason context. Stringify carefully — gets logged verbatim. */
+	details?: Record<string, unknown>;
+	/**
+	 * Charge tx hash (MPP charge intent) or first 16 hex chars of
+	 * `fingerprintCredential(rawHeader)`. Whichever your route already
+	 * computes for idempotency. Lets operators dedupe a retry storm.
+	 */
+	chargeHash?: string;
+	/** Optional route identifier — `${method} ${path}`. */
+	route?: string;
+};
+
+/** Input to `logRefundOwed` — `timestamp` + `msg` + `v` are filled in for you. */
+export type RefundOwedInput = Omit<RefundOwedEvent, "msg" | "v" | "timestamp"> & {
+	/** Override the default ISO timestamp. Useful for tests / replay. */
+	timestamp?: string;
+};
+
+/**
+ * Emit a `paywrap_refund_owed` line to stderr in the canonical shape.
+ * Use this for post-settlement failures you would not intentionally bill
+ * for (upstream 5xx, timeouts, worker crashes, etc.). Never emit it for
+ * `preCheck` rejections — those happen before settlement.
+ *
+ * Defaults to `console.error`. Pass `sink` to redirect (tests, custom
+ * transports). The sink receives the already-stringified JSON line.
+ *
+ * Never logs the raw `Payment …` Authorization header. Pass `chargeHash`
+ * (a tx hash or `shortFingerprint(fingerprintCredential(header))`) when
+ * you have one — operators use it to dedupe retries.
+ *
+ * Returns the emitted event so callers can pipe it elsewhere (a separate
+ * structured-events sink, an audit table, etc.) without re-deriving fields.
+ */
+export const logRefundOwed = (
+	input: RefundOwedInput,
+	sink: (line: string) => void = (line) => console.error(line),
+): RefundOwedEvent => {
+	const event: RefundOwedEvent = {
+		msg: "paywrap_refund_owed",
+		v: 1,
+		timestamp: input.timestamp ?? new Date().toISOString(),
+		payer: input.payer,
+		sku: input.sku,
+		amountUsdcMicro: input.amountUsdcMicro,
+		reason: input.reason,
+		...(input.details !== undefined && { details: input.details }),
+		...(input.chargeHash !== undefined && { chargeHash: input.chargeHash }),
+		...(input.route !== undefined && { route: input.route }),
+	};
+	try {
+		sink(JSON.stringify(event));
+	} catch {
+		// observability must never break the hot path
+	}
+	return event;
+};
+
+/**
  * Fan a single event out to multiple sinks. Each logger runs concurrently
  * and is wrapped in try/catch so a flaky destination (Datadog 5xx, KV
  * eviction, etc.) can't take down the rest. `safeLog` is already

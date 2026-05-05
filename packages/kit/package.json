@@ -25,7 +25,8 @@
 		"./health": { "types": "./dist/health/index.d.ts", "import": "./dist/health/index.js" },
 		"./setup": { "types": "./dist/setup/index.d.ts", "import": "./dist/setup/index.js" },
 		"./proxy": { "types": "./dist/proxy/index.d.ts", "import": "./dist/proxy/index.js" },
-		"./logger": { "types": "./dist/logger/index.d.ts", "import": "./dist/logger/index.js" }
+		"./logger": { "types": "./dist/logger/index.d.ts", "import": "./dist/logger/index.js" },
+		"./refund": { "types": "./dist/refund/index.d.ts", "import": "./dist/refund/index.js" }
 	},
 	"files": ["dist", "README.md", "docs"],
 	"scripts": {

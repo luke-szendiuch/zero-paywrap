@@ -272,7 +272,8 @@ The kit ships **no root barrel** — import only the subpath you need. This keep
 | `@zeroclickai/paywrap/health` | `aggregateHealthProbes` | Assembling `/healthz` responses from per-subsystem probes. |
 | `@zeroclickai/paywrap/setup` | `generateWallet`, `generateMppSecretKey`, `prefundWallet` | One-shot setup scripts the CLI wraps; callable from a consumer's own `pnpm setup`. |
 | `@zeroclickai/paywrap/proxy` | `proxyUpstreamRequest`, `UpstreamProxyResponse` | Charge-intent services proxying an upstream API. Sniffs Content-Type and returns a discriminated `{kind: "json" \| "binary"}` so PNG/PDF endpoints don't get JSON-corrupted. |
-| `@zeroclickai/paywrap/logger` | `LoggerCallback`, `PaywrapLogEvent`, `consoleJsonLogger`, `safeLog`, `shortFingerprint` | Structured-event logging hook. Pass a `logger` to `createPaywrapMpp` / `createPaywrapX402` and adapters emit `payment_required`, `payment_settled`, `payment_failed`, and `request_completed`. Sink-agnostic — see "Observability" below. |
+| `@zeroclickai/paywrap/logger` | `LoggerCallback`, `PaywrapLogEvent`, `consoleJsonLogger`, `safeLog`, `shortFingerprint`, `logRefundOwed`, `RefundReason` | Structured-event logging hook. Pass a `logger` to `createPaywrapMpp` / `createPaywrapX402` and adapters emit `payment_required`, `payment_settled`, `payment_failed`, and `request_completed`. Also exports `logRefundOwed` for emitting `paywrap_refund_owed` events on post-settlement failures (typed reason bucket; see "Refund-eligible failures" below). Sink-agnostic — see "Observability" below. |
+| `@zeroclickai/paywrap/refund` | `refundCharge`, `RefundChargeInput`, `RefundSentEvent` | Send a USDC refund from the seller wallet to the original payer. Requires keyed mode (`PaywrapMppKeyed`). Single-tx primitive — caller decides when to refund and tracks idempotency. See "Refunding charges" below. |
 
 ## Service discovery: OpenAPI + 402
 
@@ -370,28 +371,54 @@ app.post(
 );
 ```
 
-### Refund-eligible failures: just log this shape
+### Refund-eligible failures: emit `paywrap_refund_owed`
 
-When charge-intent settles and the upstream call fails, the buyer paid for nothing. Refunds happen out-of-band by an operator script. The kit doesn't ship a wrapper — just emit one JSON line per failure with this shape, on `console.error`:
+When charge-intent settles and the upstream call fails, the buyer paid for nothing. The kit does **not** ship an automated refund executor — refunds happen out-of-band by an operator process. Paywrap's job is making them auditable: emit one structured event per post-settlement failure in a fixed shape, so a single grep across log streams produces the refund queue.
+
+Use `logRefundOwed` from `@zeroclickai/paywrap/logger`:
 
 ```ts
-console.error(JSON.stringify({
-  msg: "paywrap_refund_owed",
-  payer: "0xabc",
+import { logRefundOwed } from "@zeroclickai/paywrap/logger";
+
+logRefundOwed({
+  payer: req.payer,
   sku: "jigsaw-image-gen:v2",
   amountUsdcMicro: "50000",
-  reason: "upstream_5xx",
+  reason: "upstream_5xx", // typed RefundReason bucket
   details: { upstreamStatus: 503 },
-  chargeHash: "ff00",
-  timestamp: new Date().toISOString(),
-}));
+  chargeHash, // tx hash or shortFingerprint(fingerprintCredential(authHeader))
+});
 ```
 
-Standard shape across services means one operator grep handles every paywrap deployment.
+`reason` is a typed `RefundReason` union (`upstream_5xx`, `upstream_4xx_post_settlement`, `upstream_timeout`, `upstream_rate_limit`, `worker_crash`, `post_settlement_validation`, `unknown`). Service-specific specifics go in `details`. The helper writes a JSON line to `console.error`; pass a `sink` to redirect.
 
-Use this for post-settlement failures you would not intentionally bill for: upstream 5xx, upstream rate limits, network timeouts, worker crashes after settlement, and validation you could only do after the paid side effect began. Do not log refunds for `preCheck` rejections because those happen before settlement. For upstream/user 4xx, decide per product: if the user paid for validation or linting, return the 4xx as the paid result; if the upstream rejected a request your service should have caught before settlement, log the refund event.
+Use this for post-settlement failures you would not intentionally bill for: upstream 5xx, upstream rate limits, network timeouts, worker crashes after settlement, and validation you could only do after the paid side effect began. Do not emit for `preCheck` rejections — those happen before settlement. For upstream/user 4xx, decide per product: if the user paid for validation or linting, return the 4xx as the paid result; if the upstream rejected a request your service should have caught before settlement, log the refund event.
 
-Include `chargeHash` or a credential fingerprint when your route already computes one for idempotency. Never log the raw `Payment ...` header.
+The helper has no field for the raw `Payment ...` header — privacy is enforced at the type level. See [Operations Guide § Refund-Eligible Failures](./docs/operations.md#refund-eligible-failures) for the full reason taxonomy.
+
+### Refunding charges (opt-in)
+
+When you've decided a refund is owed, `refundCharge` from `@zeroclickai/paywrap/refund` sends USDC from the seller wallet back to the original payer:
+
+```ts
+import { refundCharge } from "@zeroclickai/paywrap/refund";
+
+const { txHash } = await refundCharge(mpp, {
+  payer: event.payer,
+  amountUsdcMicro: BigInt(event.amountUsdcMicro),
+  note: `auto-refund for ${event.reason}`,
+  chargeHash: event.chargeHash,
+  sku: event.sku,
+});
+```
+
+Three things to know:
+
+1. **Requires keyed mode.** The helper takes `PaywrapMppKeyed` (the seller wallet must have a private key in the runtime — address-only mode is a compile error). Charge-intent's just-settled USDC funds the refund tx; gas is paid in USDC via `feeToken: USDC`.
+2. **Caller owns idempotency.** The kit does not track which charges have been refunded. Use your own DB / KV / `chargeHash` dedup before calling. Calling twice will send two refunds.
+3. **Decision is yours.** Paywrap deliberately does NOT auto-refund from the request path — that masks bugs and creates abuse vectors. Wire `refundCharge` into an operator script, a scheduled job that drains a refund queue, or an in-handler post-failure call where YOU decide a refund is owed. The kit ships the primitive; you ship the policy.
+
+A `paywrap_refund_sent` JSON line is emitted to `console.error` on success — pair with `grep paywrap_refund_(owed|sent)` to reconcile owed vs sent across log streams.
 
 ## Observability
 
