@@ -14,9 +14,10 @@ export type CreatePaywrapX402Config = {
 	/** Which Base chain to settle on. */
 	network: X402Network;
 	/**
-	 * Facilitator config. Defaults to x402.org's public facilitator which
-	 * is testnet-only. For Base mainnet, pass `{ url: "https://facilitator.payai.network" }`
-	 * (open, no API keys), Coinbase CDP, or any other compliant facilitator.
+	 * Facilitator config. If omitted, defaults are picked from `network`:
+	 * `base` → `https://facilitator.payai.network` (open, no API keys, supports
+	 * Base mainnet), `base-sepolia` → `https://x402.org/facilitator` (testnet
+	 * only). Pass an explicit `{ url }` or a `FacilitatorClient` to override.
 	 */
 	facilitator?: FacilitatorConfig | FacilitatorClient;
 	/**
@@ -57,10 +58,20 @@ const isFacilitatorClient = (
  * No on-chain calls or wallet signing happen here: x402 settlement is
  * facilitator-mediated, so the seller wallet is just the receive address.
  */
+// x402.org's facilitator only supports testnets (verified empirically: its
+// /supported endpoint lists only eip155:84532). payai is open + supports
+// mainnet — used as the default for `network: "base"`.
+const DEFAULT_FACILITATOR_URL: Record<X402Network, string> = {
+	base: "https://facilitator.payai.network",
+	"base-sepolia": "https://x402.org/facilitator",
+};
+
 export const createPaywrapX402 = (config: CreatePaywrapX402Config): PaywrapX402 => {
 	const facilitator: FacilitatorClient = isFacilitatorClient(config.facilitator)
 		? config.facilitator
-		: new HTTPFacilitatorClient(config.facilitator);
+		: new HTTPFacilitatorClient(
+				config.facilitator ?? { url: DEFAULT_FACILITATOR_URL[config.network] },
+			);
 
 	const resourceServer = new x402ResourceServer(facilitator).register(
 		"eip155:*",
