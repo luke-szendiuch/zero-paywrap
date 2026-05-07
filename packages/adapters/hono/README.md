@@ -323,7 +323,8 @@ import { x402Gated } from "@zeroclickai/paywrap-adapter-hono";
 const x402 = createPaywrapX402({
   payTo: "0xYourSellerAddress",
   network: "base", // or "base-sepolia" for testnet
-  // facilitator: { url: "https://x402.org/facilitator" } — default
+  // facilitator: defaults to facilitator.payai.network on `base` (mainnet)
+  // and x402.org on `base-sepolia` (testnet); override with `{ url }`.
 });
 
 const app = new Hono();

@@ -7,6 +7,7 @@ import {
 import { ExactEvmScheme } from "@x402/evm/exact/server";
 import { type LoggerCallback, safeLog } from "../logger/index.js";
 import { type X402Network, x402NetworkId } from "./constants.js";
+import { FallbackFacilitatorClient } from "./fallback-facilitator.js";
 
 export type CreatePaywrapX402Config = {
 	/** Address that receives settled USDC. */
@@ -14,11 +15,21 @@ export type CreatePaywrapX402Config = {
 	/** Which Base chain to settle on. */
 	network: X402Network;
 	/**
-	 * Facilitator config. Defaults to x402.org's public facilitator which
-	 * is testnet-only. For Base mainnet, pass `{ url: "https://facilitator.payai.network" }`
-	 * (open, no API keys), Coinbase CDP, or any other compliant facilitator.
+	 * Facilitator config. If omitted, defaults are picked from `network`:
+	 * `base` → an ordered fallback chain `[payai, world.fun]` (both open,
+	 * no API keys, both verified to settle Base mainnet — payai is primary
+	 * for ecosystem maturity, world.fun is backup for ride-through during
+	 * payai outages); `base-sepolia` → `https://x402.org/facilitator`. On
+	 * settle failure (thrown error or `success: false`) the fallback
+	 * automatically tries the next client.
+	 *
+	 * Pass an explicit `{ url }`, a `FacilitatorClient`, or an array of
+	 * either to override the defaults.
 	 */
-	facilitator?: FacilitatorConfig | FacilitatorClient;
+	facilitator?:
+		| FacilitatorConfig
+		| FacilitatorClient
+		| Array<FacilitatorConfig | FacilitatorClient>;
 	/**
 	 * Optional structured-event logger. The factory registers
 	 * `onAfterSettle` / `onSettleFailure` hooks on the resource server to
@@ -57,10 +68,34 @@ const isFacilitatorClient = (
  * No on-chain calls or wallet signing happen here: x402 settlement is
  * facilitator-mediated, so the seller wallet is just the receive address.
  */
+// x402.org's facilitator only supports testnets (verified empirically: its
+// /supported endpoint lists only eip155:84532). For mainnet we chain two
+// open, no-API-key facilitators that both settle Base. payai is primary —
+// most established x402 facilitator, more public usage, more eyes on
+// regressions. world.fun (from AWE Network) is the failover — its signer
+// 0x6Cb9... has 86k+ txs on Base, but the project is smaller / less
+// battle-tested, so it sits behind payai.
+const DEFAULT_FACILITATOR_URLS: Record<X402Network, string[]> = {
+	base: ["https://facilitator.payai.network", "https://facilitator.world.fun"],
+	"base-sepolia": ["https://x402.org/facilitator"],
+};
+
+const toClient = (entry: FacilitatorConfig | FacilitatorClient): FacilitatorClient =>
+	isFacilitatorClient(entry) ? entry : new HTTPFacilitatorClient(entry);
+
+const resolveFacilitator = (config: CreatePaywrapX402Config): FacilitatorClient => {
+	const entries: Array<FacilitatorConfig | FacilitatorClient> =
+		config.facilitator === undefined
+			? DEFAULT_FACILITATOR_URLS[config.network].map((url) => ({ url }))
+			: Array.isArray(config.facilitator)
+				? config.facilitator
+				: [config.facilitator];
+	const clients = entries.map(toClient);
+	return clients.length === 1 ? clients[0]! : new FallbackFacilitatorClient(clients);
+};
+
 export const createPaywrapX402 = (config: CreatePaywrapX402Config): PaywrapX402 => {
-	const facilitator: FacilitatorClient = isFacilitatorClient(config.facilitator)
-		? config.facilitator
-		: new HTTPFacilitatorClient(config.facilitator);
+	const facilitator = resolveFacilitator(config);
 
 	const resourceServer = new x402ResourceServer(facilitator).register(
 		"eip155:*",
