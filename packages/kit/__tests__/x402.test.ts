@@ -49,16 +49,17 @@ describe("createPaywrapX402", () => {
 		expect(x402.networkId).toBe(BASE_SEPOLIA_NETWORK);
 	});
 
-	it("defaults to a [world.fun, payai] fallback chain on base mainnet", () => {
+	it("defaults to a [payai, world.fun] fallback chain on base mainnet", () => {
 		const x402 = createPaywrapX402({ payTo: PAY_TO, network: "base" });
 		// Mainnet must fan out across two open facilitators so a single
 		// outage doesn't kill paid routes (payai's /settle was down for ~24h
 		// in May 2026 — that's the failure mode this default protects against).
+		// payai is primary for ecosystem maturity; world.fun is backup.
 		expect(x402.facilitator).toBeInstanceOf(FallbackFacilitatorClient);
 		const urls = (x402.facilitator as FallbackFacilitatorClient).clients.map(
 			(c) => (c as unknown as { url: string }).url,
 		);
-		expect(urls).toEqual(["https://facilitator.world.fun", "https://facilitator.payai.network"]);
+		expect(urls).toEqual(["https://facilitator.payai.network", "https://facilitator.world.fun"]);
 	});
 
 	it("defaults to x402.org facilitator on base-sepolia (single-client, no fallback)", () => {

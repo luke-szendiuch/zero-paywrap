@@ -16,11 +16,12 @@ export type CreatePaywrapX402Config = {
 	network: X402Network;
 	/**
 	 * Facilitator config. If omitted, defaults are picked from `network`:
-	 * `base` → an ordered fallback chain `[world.fun, payai]` (both open, no
-	 * API keys, both verified to settle Base mainnet); `base-sepolia` →
-	 * `https://x402.org/facilitator`. On settle failure (thrown error or
-	 * `success: false`) the fallback automatically tries the next client,
-	 * which buys ride-through during single-facilitator outages.
+	 * `base` → an ordered fallback chain `[payai, world.fun]` (both open,
+	 * no API keys, both verified to settle Base mainnet — payai is primary
+	 * for ecosystem maturity, world.fun is backup for ride-through during
+	 * payai outages); `base-sepolia` → `https://x402.org/facilitator`. On
+	 * settle failure (thrown error or `success: false`) the fallback
+	 * automatically tries the next client.
 	 *
 	 * Pass an explicit `{ url }`, a `FacilitatorClient`, or an array of
 	 * either to override the defaults.
@@ -69,10 +70,13 @@ const isFacilitatorClient = (
  */
 // x402.org's facilitator only supports testnets (verified empirically: its
 // /supported endpoint lists only eip155:84532). For mainnet we chain two
-// open, no-API-key facilitators that both settle Base — primary first, then
-// fallback. Order matters: lower-latency primary, broader-coverage backup.
+// open, no-API-key facilitators that both settle Base. payai is primary —
+// most established x402 facilitator, more public usage, more eyes on
+// regressions. world.fun (from AWE Network) is the failover — its signer
+// 0x6Cb9... has 86k+ txs on Base, but the project is smaller / less
+// battle-tested, so it sits behind payai.
 const DEFAULT_FACILITATOR_URLS: Record<X402Network, string[]> = {
-	base: ["https://facilitator.world.fun", "https://facilitator.payai.network"],
+	base: ["https://facilitator.payai.network", "https://facilitator.world.fun"],
 	"base-sepolia": ["https://x402.org/facilitator"],
 };
 
