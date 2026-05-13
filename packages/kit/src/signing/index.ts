@@ -111,11 +111,19 @@ export const buildVoucherCredential = async (
 	return Credential.serialize(credential);
 };
 
-// Proof-credential EIP-712 domain. Mirrors `mppx/dist/tempo/internal/proof.js`.
+// Proof-credential EIP-712 contract. Mirrors `mppx/dist/tempo/internal/proof.js`
+// (v=2 schema; realm binding added in mppx 0.6.5). Bump in lockstep when mppx
+// revises this contract — the unit test `signs the typed data under the v=2
+// Proof contract` in `__tests__/signing.test.ts` pins this shape via
+// `recoverTypedDataAddress` and will fail on drift. mppx cut v=1 without a
+// backcompat shim; paywrap mirrors that posture (see ADS-678).
 const PROOF_DOMAIN_NAME = "MPP";
-const PROOF_DOMAIN_VERSION = "1";
+const PROOF_DOMAIN_VERSION = "2";
 const PROOF_TYPES = {
-	Proof: [{ name: "challengeId", type: "string" }],
+	Proof: [
+		{ name: "challengeId", type: "string" },
+		{ name: "realm", type: "string" },
+	],
 } as const;
 
 export type BuildChargeCredentialParams = {
@@ -180,7 +188,7 @@ export const buildChargeCredential = async (
 		},
 		types: PROOF_TYPES,
 		primaryType: "Proof",
-		message: { challengeId: challenge.id },
+		message: { challengeId: challenge.id, realm: params.realm },
 	});
 
 	const credential = Credential.from({

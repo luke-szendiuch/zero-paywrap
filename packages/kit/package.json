@@ -38,7 +38,7 @@
 	"dependencies": {
 		"@x402/core": "^2.9.0",
 		"@x402/evm": "^2.9.0",
-		"mppx": "^0.6.2",
+		"mppx": "^0.6.20",
 		"viem": "^2.21.55"
 	},
 	"peerDependencies": {

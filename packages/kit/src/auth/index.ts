@@ -150,7 +150,8 @@ export const buildChargeChallenge = (
 
 /**
  * 402 `tempo.charge` with `amount="0"` — "proof credential" flow. Client signs
- * `Proof(challengeId)` to prove wallet control without moving funds.
+ * `Proof(challengeId, realm)` (mppx ≥0.6.5 v=2 contract) to prove wallet
+ * control without moving funds.
  */
 export const buildProofChallenge = (
 	mppx: MppxInstance,

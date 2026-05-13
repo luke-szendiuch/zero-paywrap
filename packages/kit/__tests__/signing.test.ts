@@ -1,5 +1,6 @@
 import { Credential } from "mppx";
 import { Session } from "mppx/tempo";
+import { recoverTypedDataAddress } from "viem";
 import { generatePrivateKey, privateKeyToAccount } from "viem/accounts";
 import { describe, expect, it } from "vitest";
 import { TEMPO_CHAIN_ID, TEMPO_ESCROW, TEMPO_USDC } from "../src/mpp/constants.js";
@@ -14,6 +15,21 @@ import { seedChannel } from "../src/testing/index.js";
 
 const RECIPIENT = "0x1111111111111111111111111111111111111111" as const;
 const SECRET_KEY = "a".repeat(64);
+
+/**
+ * Decode `challenge.opaque` (base64url-encoded JSON of the meta map; opaque
+ * serialization changed to spec-compliant base64url in mppx 0.6.4) back into
+ * a record. Tests assert against the decoded shape so they exercise the full
+ * round-trip, not an in-memory pre-serialize view. See ADS-678.
+ */
+const decodeOpaque = (opaque: unknown): Record<string, string> => {
+	if (typeof opaque !== "string") {
+		throw new Error(`decodeOpaque: expected string, got ${typeof opaque}`);
+	}
+	const padLen = (4 - (opaque.length % 4)) % 4;
+	const padded = opaque.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat(padLen);
+	return JSON.parse(Buffer.from(padded, "base64").toString("utf8"));
+};
 
 describe("signing.channelIdFromLabel", () => {
 	it("is deterministic for the same label", () => {
@@ -76,8 +92,9 @@ describe("signing.buildVoucherCredential", () => {
 		expect(credential.challenge.realm).toBe("api.example.com");
 		expect(credential.challenge.method).toBe("tempo");
 		expect(credential.challenge.intent).toBe("session");
-		// scope ends up under the reserved `_mppx_scope` opaque key
-		expect(credential.challenge.opaque?._mppx_scope).toBe("my-scope:1");
+		// scope ends up under the reserved `_mppx_scope` key inside the
+		// base64url-encoded `opaque` blob (mppx ≥0.6.4 round-trip shape).
+		expect(decodeOpaque(credential.challenge.opaque)._mppx_scope).toBe("my-scope:1");
 	});
 
 	it("merges extra meta into opaque alongside the scope", async () => {
@@ -96,9 +113,10 @@ describe("signing.buildVoucherCredential", () => {
 		});
 
 		const credential = Credential.deserialize(serialized);
-		expect(credential.challenge.opaque?.route).toBe("/v1/provision");
-		expect(credential.challenge.opaque?.sku).toBe("alpha");
-		expect(credential.challenge.opaque?._mppx_scope).toBe("scoped");
+		const opaque = decodeOpaque(credential.challenge.opaque);
+		expect(opaque.route).toBe("/v1/provision");
+		expect(opaque.sku).toBe("alpha");
+		expect(opaque._mppx_scope).toBe("scoped");
 	});
 });
 
@@ -124,8 +142,9 @@ describe("signing.buildChargeCredential", () => {
 		expect(credential.challenge.method).toBe("tempo");
 		expect(credential.challenge.intent).toBe("charge");
 		expect(credential.challenge.request.amount).toBe("20000");
-		// scope ends up under the reserved `_mppx_scope` opaque key
-		expect(credential.challenge.opaque?._mppx_scope).toBe("joke:1");
+		// scope ends up under the reserved `_mppx_scope` key inside the
+		// base64url-encoded `opaque` blob (mppx ≥0.6.4 round-trip shape).
+		expect(decodeOpaque(credential.challenge.opaque)._mppx_scope).toBe("joke:1");
 		// source is a did:pkh with the payer's address + default chainId (4217)
 		expect(credential.source?.toLowerCase()).toBe(
 			`did:pkh:eip155:${TEMPO_CHAIN_ID}:${payer.address}`.toLowerCase(),
@@ -160,8 +179,46 @@ describe("signing.buildChargeCredential", () => {
 			meta: { sku: "alpha" },
 		});
 		const credential = Credential.deserialize(serialized);
-		expect(credential.challenge.opaque?.sku).toBe("alpha");
-		expect(credential.challenge.opaque?._mppx_scope).toBe("m:1");
+		const opaque = decodeOpaque(credential.challenge.opaque);
+		expect(opaque.sku).toBe("alpha");
+		expect(opaque._mppx_scope).toBe("m:1");
+	});
+
+	// Pins the v=2 Proof EIP-712 contract (realm binding added in mppx 0.6.5).
+	// If anyone drifts the inline contract in `signing/index.ts` away from
+	// mppx's published `tempo/internal/proof.js` (e.g. reverts to v=1, or
+	// partially updates),
+	// `recoverTypedDataAddress` will return a different address and this test
+	// fails at unit-test time — long before a CLI-built credential is rejected
+	// in production with "Proof signature does not match source." See ADS-678.
+	it("signs the typed data under the v=2 Proof contract (realm included)", async () => {
+		const payer = privateKeyToAccount(generatePrivateKey());
+		const realm = "api.example.com";
+		const serialized = await buildChargeCredential({
+			payer,
+			recipient: RECIPIENT,
+			amountMicro: 0n,
+			realm,
+			secretKey: SECRET_KEY,
+			scope: "v2-pin:1",
+		});
+		const credential = Credential.deserialize<{
+			signature: `0x${string}`;
+			type: string;
+		}>(serialized);
+		const recovered = await recoverTypedDataAddress({
+			domain: { name: "MPP", version: "2", chainId: TEMPO_CHAIN_ID },
+			types: {
+				Proof: [
+					{ name: "challengeId", type: "string" },
+					{ name: "realm", type: "string" },
+				],
+			},
+			primaryType: "Proof",
+			message: { challengeId: credential.challenge.id, realm },
+			signature: credential.payload.signature,
+		});
+		expect(recovered.toLowerCase()).toBe(payer.address.toLowerCase());
 	});
 });
 

@@ -40,7 +40,7 @@ importers:
         version: 4.12.15
       viem:
         specifier: ^2.21.55
-        version: 2.48.4(typescript@5.9.3)(zod@4.3.6)
+        version: 2.48.4(typescript@5.9.3)(zod@4.4.3)
     devDependencies:
       '@cloudflare/workers-types':
         specifier: ^4.20241224.0
@@ -49,8 +49,8 @@ importers:
         specifier: ^22.10.2
         version: 22.19.17
       mppx:
-        specifier: ^0.6.2
-        version: 0.6.3(hono@4.12.15)(typescript@5.9.3)(viem@2.48.4(typescript@5.9.3)(zod@4.3.6))
+        specifier: ^0.6.20
+        version: 0.6.20(hono@4.12.15)(typescript@5.9.3)(viem@2.48.4(typescript@5.9.3)(zod@4.4.3))
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
@@ -65,10 +65,10 @@ importers:
         version: link:../../kit
       fastify-type-provider-zod:
         specifier: ^4.0.2
-        version: 4.0.2(fastify@5.8.5)(zod@4.3.6)
+        version: 4.0.2(fastify@5.8.5)(zod@4.4.3)
       mppx:
-        specifier: ^0.6.2
-        version: 0.6.3(hono@4.12.15)(typescript@5.9.3)(viem@2.48.4(typescript@5.9.3)(zod@4.3.6))
+        specifier: ^0.6.20
+        version: 0.6.20(hono@4.12.15)(typescript@5.9.3)(viem@2.48.4(typescript@5.9.3)(zod@4.4.3))
     devDependencies:
       '@types/node':
         specifier: ^22.10.2
@@ -81,7 +81,7 @@ importers:
         version: 5.9.3
       viem:
         specifier: ^2.21.55
-        version: 2.48.4(typescript@5.9.3)(zod@4.3.6)
+        version: 2.48.4(typescript@5.9.3)(zod@4.4.3)
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.19.17)
@@ -112,7 +112,7 @@ importers:
         version: 5.9.3
       viem:
         specifier: ^2.21.55
-        version: 2.48.4(typescript@5.9.3)(zod@4.3.6)
+        version: 2.48.4(typescript@5.9.3)(zod@4.4.3)
       vitest:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@22.19.17)
@@ -157,11 +157,11 @@ importers:
         specifier: ^2.9.0
         version: 2.10.0(typescript@5.9.3)
       mppx:
-        specifier: ^0.6.2
-        version: 0.6.3(hono@4.12.15)(typescript@5.9.3)(viem@2.48.4(typescript@5.9.3)(zod@4.3.6))
+        specifier: ^0.6.20
+        version: 0.6.20(hono@4.12.15)(typescript@5.9.3)(viem@2.48.4(typescript@5.9.3)(zod@4.4.3))
       viem:
         specifier: ^2.21.55
-        version: 2.48.4(typescript@5.9.3)(zod@4.3.6)
+        version: 2.48.4(typescript@5.9.3)(zod@4.4.3)
     devDependencies:
       '@types/node':
         specifier: ^22.10.2
@@ -1139,8 +1139,8 @@ packages:
     resolution: {integrity: sha512-eKCa6bwnJhvxj14kZk5NCPc6Hb6BdsU9DZcOnmQKSnO1VKrfV0zCvtttPZUsBvjmNDn8rpcJfpwSYnHBjc95MQ==}
     engines: {node: '>=18.18.0'}
 
-  incur@0.3.25:
-    resolution: {integrity: sha512-jrSkzauM42ilbQJ6THVkAY6dTulkyVW0sZpVHdA8gfiBwrLrLnLUf8U3bAOegAKBIMSOFgk1idchgu9xm9HMng==}
+  incur@0.4.5:
+    resolution: {integrity: sha512-4WFlqm5e+IKNoX+lDIjjpebO8ResPx3vPUBChxNfnNo3oGp0ooo6piiiTspOMub2dq2mcG/AmlUq0ejuGfKobg==}
     engines: {node: '>=22'}
     hasBin: true
 
@@ -1196,8 +1196,8 @@ packages:
   magic-string@0.30.21:
     resolution: {integrity: sha512-vd2F4YUyEXKGcLHoq+TEyCjxueSeHnFxyyjNp80yg0XV4vUhnDer/lvvlqM/arB5bXQN5K2/3oinyCRyx8T2CQ==}
 
-  mppx@0.6.3:
-    resolution: {integrity: sha512-oIph21VeazRLYr4ArOhA4O1UMPNni9XMXcuEKa83IRR2A9zuGSio9XbAyFzmEwyghBBvAv8AN2tBGx1qd2dDaA==}
+  mppx@0.6.20:
+    resolution: {integrity: sha512-RNXcY64QQVuDo3BqFEQAfp8ciF9O+DVIazDzZsf8vd9g4xqO1BRvTBLEcSO0WcEo6HcmQSL3Qsv3zgdM8vb3Eg==}
     hasBin: true
     peerDependencies:
       '@modelcontextprotocol/sdk': '>=1.25.0'
@@ -1230,14 +1230,6 @@ packages:
   on-exit-leak-free@2.1.2:
     resolution: {integrity: sha512-0eJJY6hXLGf1udHwfNftBqH+g73EU4B504nZeKpz1sYRKafAghwxEJunB2O7rDZkL4PGfsMVnTXZ2EjibbqcsA==}
     engines: {node: '>=14.0.0'}
-
-  ox@0.14.15:
-    resolution: {integrity: sha512-3TubCmbKen/cuZQzX0qDbOS5lojjdSZ90lqKxWIDWd5siuJ0IJBaTXMYs8eMPLcraqnOwGZazz3apHPGiRCkGQ==}
-    peerDependencies:
-      typescript: '>=5.4.0'
-    peerDependenciesMeta:
-      typescript:
-        optional: true
 
   ox@0.14.20:
     resolution: {integrity: sha512-rby38C3nDn8eQkf29Zgw4hkCZJ64Qqi0zRPWL8ENUQ7JVuoITqrVtwWQgM/He19SCMUEc7hS/Sjw0jIOSLJhOw==}
@@ -1549,8 +1541,8 @@ packages:
   zod@3.25.76:
     resolution: {integrity: sha512-gzUt/qt81nXsFGKIFcC3YnfEAx5NkunCfnDlvuBSSFS02bcXu4Lmea0AFIUwbLWxWPx3d9p8S5QoaujKcNQxcQ==}
 
-  zod@4.3.6:
-    resolution: {integrity: sha512-rftlrkhHZOcjDwkGlnUtZZkvaPHCsDATp4pGpuOOMDaTdDDXF91wuVDJoWoPsKX/3YPQ5fHuF3STjcYyKr+Qhg==}
+  zod@4.4.3:
+    resolution: {integrity: sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ==}
 
 snapshots:
 
@@ -1857,7 +1849,7 @@ snapshots:
 
   '@modelcontextprotocol/server@2.0.0-alpha.2(@cfworker/json-schema@4.1.1)':
     dependencies:
-      zod: 4.3.6
+      zod: 4.4.3
     optionalDependencies:
       '@cfworker/json-schema': 4.1.1
 
@@ -1966,11 +1958,11 @@ snapshots:
       '@noble/hashes': 1.8.0
       apg-js: 4.4.0
 
-  '@signinwithethereum/siwe@4.2.0(viem@2.48.4(typescript@5.9.3)(zod@4.3.6))':
+  '@signinwithethereum/siwe@4.2.0(viem@2.48.4(typescript@5.9.3)(zod@4.4.3))':
     dependencies:
       '@signinwithethereum/siwe-parser': 4.2.0
     optionalDependencies:
-      viem: 2.48.4(typescript@5.9.3)(zod@4.3.6)
+      viem: 2.48.4(typescript@5.9.3)(zod@4.4.3)
 
   '@sindresorhus/merge-streams@4.0.0': {}
 
@@ -2040,7 +2032,7 @@ snapshots:
     dependencies:
       '@noble/curves': 1.9.1
       '@scure/base': 1.2.6
-      '@signinwithethereum/siwe': 4.2.0(viem@2.48.4(typescript@5.9.3)(zod@4.3.6))
+      '@signinwithethereum/siwe': 4.2.0(viem@2.48.4(typescript@5.9.3)(zod@4.4.3))
       '@x402/core': 2.10.0
       ajv: 8.18.0
       jose: 5.10.0
@@ -2070,20 +2062,20 @@ snapshots:
       typescript: 5.9.3
       zod: 3.25.76
 
-  abitype@1.2.3(typescript@5.9.3)(zod@4.3.6):
+  abitype@1.2.3(typescript@5.9.3)(zod@4.4.3):
     optionalDependencies:
       typescript: 5.9.3
-      zod: 4.3.6
+      zod: 4.4.3
 
   abitype@1.2.4(typescript@5.9.3)(zod@3.25.76):
     optionalDependencies:
       typescript: 5.9.3
       zod: 3.25.76
 
-  abitype@1.2.4(typescript@5.9.3)(zod@4.3.6):
+  abitype@1.2.4(typescript@5.9.3)(zod@4.4.3):
     optionalDependencies:
       typescript: 5.9.3
-      zod: 4.3.6
+      zod: 4.4.3
 
   abstract-logging@2.0.1: {}
 
@@ -2272,12 +2264,12 @@ snapshots:
 
   fast-uri@3.1.0: {}
 
-  fastify-type-provider-zod@4.0.2(fastify@5.8.5)(zod@4.3.6):
+  fastify-type-provider-zod@4.0.2(fastify@5.8.5)(zod@4.4.3):
     dependencies:
       '@fastify/error': 4.2.0
       fastify: 5.8.5
-      zod: 4.3.6
-      zod-to-json-schema: 3.25.2(zod@4.3.6)
+      zod: 4.4.3
+      zod-to-json-schema: 3.25.2(zod@4.4.3)
 
   fastify@5.8.5:
     dependencies:
@@ -2327,14 +2319,14 @@ snapshots:
 
   human-signals@8.0.1: {}
 
-  incur@0.3.25:
+  incur@0.4.5:
     dependencies:
       '@cfworker/json-schema': 4.1.1
       '@modelcontextprotocol/server': 2.0.0-alpha.2(@cfworker/json-schema@4.1.1)
       '@toon-format/toon': 2.1.0
       tokenx: 1.3.0
       yaml: 2.8.3
-      zod: 4.3.6
+      zod: 4.4.3
 
   ioredis@5.10.1:
     dependencies:
@@ -2388,12 +2380,12 @@ snapshots:
     dependencies:
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  mppx@0.6.3(hono@4.12.15)(typescript@5.9.3)(viem@2.48.4(typescript@5.9.3)(zod@4.3.6)):
+  mppx@0.6.20(hono@4.12.15)(typescript@5.9.3)(viem@2.48.4(typescript@5.9.3)(zod@4.4.3)):
     dependencies:
-      incur: 0.3.25
-      ox: 0.14.15(typescript@5.9.3)(zod@4.3.6)
-      viem: 2.48.4(typescript@5.9.3)(zod@4.3.6)
-      zod: 4.3.6
+      incur: 0.4.5
+      ox: 0.14.20(typescript@5.9.3)(zod@4.4.3)
+      viem: 2.48.4(typescript@5.9.3)(zod@4.4.3)
+      zod: 4.4.3
     optionalDependencies:
       hono: 4.12.15
     transitivePeerDependencies:
@@ -2410,21 +2402,6 @@ snapshots:
 
   on-exit-leak-free@2.1.2: {}
 
-  ox@0.14.15(typescript@5.9.3)(zod@4.3.6):
-    dependencies:
-      '@adraffy/ens-normalize': 1.11.1
-      '@noble/ciphers': 1.3.0
-      '@noble/curves': 1.9.1
-      '@noble/hashes': 1.8.0
-      '@scure/bip32': 1.7.0
-      '@scure/bip39': 1.6.0
-      abitype: 1.2.4(typescript@5.9.3)(zod@4.3.6)
-      eventemitter3: 5.0.1
-    optionalDependencies:
-      typescript: 5.9.3
-    transitivePeerDependencies:
-      - zod
-
   ox@0.14.20(typescript@5.9.3)(zod@3.25.76):
     dependencies:
       '@adraffy/ens-normalize': 1.11.1
@@ -2440,7 +2417,7 @@ snapshots:
     transitivePeerDependencies:
       - zod
 
-  ox@0.14.20(typescript@5.9.3)(zod@4.3.6):
+  ox@0.14.20(typescript@5.9.3)(zod@4.4.3):
     dependencies:
       '@adraffy/ens-normalize': 1.11.1
       '@noble/ciphers': 1.3.0
@@ -2448,7 +2425,7 @@ snapshots:
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
-      abitype: 1.2.4(typescript@5.9.3)(zod@4.3.6)
+      abitype: 1.2.4(typescript@5.9.3)(zod@4.4.3)
       eventemitter3: 5.0.1
     optionalDependencies:
       typescript: 5.9.3
@@ -2642,15 +2619,15 @@ snapshots:
       - utf-8-validate
       - zod
 
-  viem@2.48.4(typescript@5.9.3)(zod@4.3.6):
+  viem@2.48.4(typescript@5.9.3)(zod@4.4.3):
     dependencies:
       '@noble/curves': 1.9.1
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
-      abitype: 1.2.3(typescript@5.9.3)(zod@4.3.6)
+      abitype: 1.2.3(typescript@5.9.3)(zod@4.4.3)
       isows: 1.0.7(ws@8.18.3)
-      ox: 0.14.20(typescript@5.9.3)(zod@4.3.6)
+      ox: 0.14.20(typescript@5.9.3)(zod@4.4.3)
       ws: 8.18.3
     optionalDependencies:
       typescript: 5.9.3
@@ -2736,10 +2713,10 @@ snapshots:
 
   yoctocolors@2.1.2: {}
 
-  zod-to-json-schema@3.25.2(zod@4.3.6):
+  zod-to-json-schema@3.25.2(zod@4.4.3):
     dependencies:
-      zod: 4.3.6
+      zod: 4.4.3
 
   zod@3.25.76: {}
 
-  zod@4.3.6: {}
+  zod@4.4.3: {}

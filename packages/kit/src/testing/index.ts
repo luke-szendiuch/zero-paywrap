@@ -47,6 +47,28 @@ export type StubVerifyHandle = {
 };
 
 /**
+ * Read the `_mppx_scope` key out of a round-tripped `challenge.opaque`
+ * (base64url-encoded JSON string of the meta map; opaque serialization
+ * shape changed to spec-compliant base64url in mppx 0.6.4). Returns
+ * `null` if absent or unparseable. Tests-only: used by
+ * `stubVerifyCredential`. See ADS-678.
+ */
+const readOpaqueScope = (opaque: string | undefined): string | null => {
+	if (typeof opaque !== "string") return null;
+	try {
+		const padLen = (4 - (opaque.length % 4)) % 4;
+		const padded = opaque.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat(padLen);
+		const json =
+			typeof Buffer !== "undefined" ? Buffer.from(padded, "base64").toString("utf8") : atob(padded);
+		const parsed = JSON.parse(json) as Record<string, unknown>;
+		const v = parsed._mppx_scope;
+		return typeof v === "string" ? v : null;
+	} catch {
+		return null;
+	}
+};
+
+/**
  * Replace `mppx.verifyCredential` with a stub that parses the credential +
  * enforces `scope` but SKIPS on-chain settlement. !!! TESTING ONLY — turns a
  * paid charge into free. Exported under `@zeroclickai/paywrap/testing` to make
@@ -71,14 +93,16 @@ export const stubVerifyCredential = (mppx: MppxInstance): StubVerifyHandle => {
 			throw new Error("stubVerifyCredential: missing credential");
 		}
 		const cred = credential as {
-			challenge?: { opaque?: Record<string, string> };
+			// `challenge.opaque` is a base64url-encoded JSON string of the meta
+			// map (mppx ≥0.6.4 round-trip shape). See ADS-678.
+			challenge?: { opaque?: string };
 			payload?: unknown;
 		};
 		if (!cred.challenge) {
 			throw new Error("stubVerifyCredential: credential missing `challenge`");
 		}
 		if (options?.scope) {
-			const onCred = cred.challenge.opaque?._mppx_scope;
+			const onCred = readOpaqueScope(cred.challenge.opaque);
 			if (onCred !== options.scope) {
 				throw new Error(
 					`stubVerifyCredential: scope mismatch (expected "${options.scope}", got "${onCred ?? "<unset>"}")`,
