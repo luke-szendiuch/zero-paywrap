@@ -1,6 +1,6 @@
 {
 	"name": "@zeroclickai/paywrap-adapter-fastify",
-	"version": "0.0.14",
+	"version": "0.0.15",
 	"type": "module",
 	"description": "Fastify adapter for @zeroclickai/paywrap: route-level MPP gates, challenge helpers, and a preconfigured paid API app factory.",
 	"license": "MIT",
