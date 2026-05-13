@@ -29,7 +29,7 @@
 	"dependencies": {
 		"@zeroclickai/paywrap": "workspace:*",
 		"fastify-type-provider-zod": "^4.0.2",
-		"mppx": "^0.6.2"
+		"mppx": "^0.6.20"
 	},
 	"peerDependencies": {
 		"fastify": "^5.0.0"

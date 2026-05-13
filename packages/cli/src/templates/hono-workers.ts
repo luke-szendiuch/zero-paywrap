@@ -261,7 +261,7 @@ export const honoWorkersPackageJsonTemplate = (config: ScaffoldConfig): string =
 			"@zeroclickai/paywrap": "^0.0.16",
 			"@zeroclickai/paywrap-adapter-hono": "^0.0.14",
 			hono: "^4.8.0",
-			mppx: "^0.6.14",
+			mppx: "^0.6.20",
 			viem: "^2.21.55",
 		},
 		devDependencies: {

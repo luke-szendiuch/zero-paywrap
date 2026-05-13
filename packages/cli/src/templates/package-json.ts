@@ -11,7 +11,7 @@ import type { ScaffoldConfig } from "../lib/scaffold-config.js";
 // outdated kit to every new scaffold.
 const PAYWRAP_VERSION = "^0.0.16";
 const PAYWRAP_ADAPTER_FASTIFY_VERSION = "^0.0.14";
-const MPPX_VERSION = "^0.6.14";
+const MPPX_VERSION = "^0.6.20";
 
 export const packageJsonTemplate = (config: ScaffoldConfig): string => {
 	const deps: Record<string, string> = {
