@@ -93,7 +93,7 @@ describe("signing.buildVoucherCredential", () => {
 		expect(credential.challenge.method).toBe("tempo");
 		expect(credential.challenge.intent).toBe("session");
 		// scope ends up under the reserved `_mppx_scope` key inside the
-		// base64url-encoded `opaque` blob (mppx ≥0.6.9 round-trip shape).
+		// base64url-encoded `opaque` blob (mppx ≥0.6.4 round-trip shape).
 		expect(decodeOpaque(credential.challenge.opaque)._mppx_scope).toBe("my-scope:1");
 	});
 
@@ -143,7 +143,7 @@ describe("signing.buildChargeCredential", () => {
 		expect(credential.challenge.intent).toBe("charge");
 		expect(credential.challenge.request.amount).toBe("20000");
 		// scope ends up under the reserved `_mppx_scope` key inside the
-		// base64url-encoded `opaque` blob (mppx ≥0.6.9 round-trip shape).
+		// base64url-encoded `opaque` blob (mppx ≥0.6.4 round-trip shape).
 		expect(decodeOpaque(credential.challenge.opaque)._mppx_scope).toBe("joke:1");
 		// source is a did:pkh with the payer's address + default chainId (4217)
 		expect(credential.source?.toLowerCase()).toBe(
