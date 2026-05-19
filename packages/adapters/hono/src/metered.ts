@@ -29,6 +29,13 @@ import type { PaywrapVariables } from "./gated.js";
  * `settle` is idempotent for the last-wins case — if you call it twice the
  * second wins, but you'll usually want to call it exactly once with the
  * value you computed from the upstream response.
+ *
+ * `settle` is frozen the moment the handler returns. Late calls (from
+ * `setImmediate`, an unawaited Promise, etc.) are ignored with a
+ * `metered_late_settle_ignored` log event — the receipt has already been
+ * emitted by that point and the channel's `spent` already overridden, so a
+ * late write cannot reach the wire and silently mutating local state would
+ * desync downstream loggers from the receipt.
  */
 export type PaywrapMeteredVariables = PaywrapVariables & {
 	/**
@@ -41,6 +48,14 @@ export type PaywrapMeteredVariables = PaywrapVariables & {
 	 * beyond what they signed). Clamping is logged with `clamped: true`.
 	 */
 	settle: (actualAmount: bigint) => void;
+	/**
+	 * Final amount written to `Payment-Receipt` and `channel.spent`, clamped
+	 * to `[0, maxAmount]`. Set by `mppMetered` after the handler returns —
+	 * **undefined while the handler is executing**. Outer middlewares (usage
+	 * loggers, billing rollups) can read this to record the canonical settled
+	 * amount instead of re-implementing the clamp.
+	 */
+	settledAmount?: bigint;
 };
 
 /** Convenience alias for handler typing. */
@@ -292,8 +307,27 @@ export const mppMetered = (
 		// Settle hook — handler calls this before returning. Last write wins.
 		// We do NOT clamp here; clamping happens once at receipt-emit time so
 		// a handler that calls settle multiple times sees its raw values.
+		//
+		// `frozen` flips true the moment `await next()` returns. After that,
+		// the receipt is about to be encoded and `channel.spent` overridden;
+		// a late settle (setImmediate, unawaited Promise) cannot reach the
+		// wire, so we ignore it and log so the bug surfaces in audit.
 		let settled: bigint | null = null;
+		let frozen = false;
 		const settle = (actualAmount: bigint) => {
+			if (frozen) {
+				void safeLog(logger, {
+					v: 1,
+					kind: "payment_failed",
+					timestamp: new Date().toISOString(),
+					protocol: "mpp",
+					stage: "settle",
+					reason: `metered_late_settle_ignored:${actualAmount}`,
+					scope: opts.scope,
+					route,
+				});
+				return;
+			}
 			settled = actualAmount;
 		};
 
@@ -302,6 +336,7 @@ export const mppMetered = (
 		c.set("settle", settle);
 
 		await next();
+		frozen = true;
 
 		const fallback = settled === null;
 		const rawActual = settled ?? opts.maxAmount;
@@ -309,6 +344,10 @@ export const mppMetered = (
 		// any excess is the seller's bug or the seller's gift. Logged.
 		const clamped = rawActual > opts.maxAmount;
 		const finalAmount = clamped ? opts.maxAmount : rawActual < 0n ? 0n : rawActual;
+		// Expose the canonical settled amount on c.var so outer middlewares
+		// (usage loggers, billing rollups) can read the same value the
+		// receipt encodes without re-implementing the clamp/floor logic.
+		c.set("settledAmount", finalAmount);
 
 		const ids = readCredentialIds(credential);
 		if (ids.channelId && ids.challengeId) {

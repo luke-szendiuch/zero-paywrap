@@ -275,6 +275,161 @@ describe("mppMetered — close-voucher handling", () => {
 	});
 });
 
+describe("mppMetered — settledAmount on c.var", () => {
+	it("exposes the final clamped amount on c.var after the handler returns", async () => {
+		const { app, mpp } = makeApp();
+		const { header } = await seedAndBuild(mpp, "metered-settled-var", "listen:1", 200_000n);
+		// Outer middleware that reads c.var.settledAmount after mppMetered
+		// finishes — this is the contract the factory's usage logger uses.
+		let observed: bigint | undefined;
+		app.post(
+			"/listen",
+			async (c, next) => {
+				await next();
+				observed = (c.var as { settledAmount?: bigint }).settledAmount;
+			},
+			mppMetered({ scope: "listen:1", maxAmount: 200_000n }),
+			(c) => {
+				c.var.settle(42_000n);
+				return c.json({ ok: true });
+			},
+		);
+		await app.request("/listen", { method: "POST", headers: { authorization: header } });
+		expect(observed).toBe(42_000n);
+	});
+
+	it("settledAmount on overcharge equals maxAmount (matches receipt)", async () => {
+		const { app, mpp } = makeApp();
+		const { header } = await seedAndBuild(mpp, "metered-settled-clamp", "listen:1", 200_000n);
+		let observed: bigint | undefined;
+		app.post(
+			"/listen",
+			async (c, next) => {
+				await next();
+				observed = (c.var as { settledAmount?: bigint }).settledAmount;
+			},
+			mppMetered({ scope: "listen:1", maxAmount: 100_000n }),
+			(c) => {
+				c.var.settle(999_000n);
+				return c.json({ ok: true });
+			},
+		);
+		await app.request("/listen", { method: "POST", headers: { authorization: header } });
+		expect(observed).toBe(100_000n);
+	});
+
+	it("settledAmount on missing settle equals maxAmount (matches receipt fallback)", async () => {
+		const { app, mpp } = makeApp();
+		const { header } = await seedAndBuild(mpp, "metered-settled-fallback", "listen:1", 200_000n);
+		let observed: bigint | undefined;
+		app.post(
+			"/listen",
+			async (c, next) => {
+				await next();
+				observed = (c.var as { settledAmount?: bigint }).settledAmount;
+			},
+			mppMetered({ scope: "listen:1", maxAmount: 200_000n }),
+			(c) => c.json({ ok: true }),
+		);
+		await app.request("/listen", { method: "POST", headers: { authorization: header } });
+		expect(observed).toBe(200_000n);
+	});
+
+	it("settledAmount on negative settle equals 0n (matches receipt floor)", async () => {
+		const { app, mpp } = makeApp();
+		const { header } = await seedAndBuild(mpp, "metered-settled-negative", "listen:1", 200_000n);
+		let observed: bigint | undefined;
+		app.post(
+			"/listen",
+			async (c, next) => {
+				await next();
+				observed = (c.var as { settledAmount?: bigint }).settledAmount;
+			},
+			mppMetered({ scope: "listen:1", maxAmount: 200_000n }),
+			(c) => {
+				c.var.settle(-50_000n);
+				return c.json({ ok: true });
+			},
+		);
+		await app.request("/listen", { method: "POST", headers: { authorization: header } });
+		expect(observed).toBe(0n);
+	});
+});
+
+describe("mppMetered — late settle is frozen and ignored", () => {
+	it("settle() called via setImmediate after handler return is ignored, receipt uses pre-freeze value", async () => {
+		const events: Array<Record<string, unknown>> = [];
+		const logger = vi.fn(async (e) => {
+			events.push(e);
+		});
+		const { app, mpp } = makeApp(logger);
+		const { header } = await seedAndBuild(mpp, "metered-late-settle", "listen:1", 200_000n);
+		app.post("/listen", mppMetered({ scope: "listen:1", maxAmount: 200_000n }), (c) => {
+			c.var.settle(20_000n);
+			// Schedule a late settle that resolves after the handler returns.
+			// Without the freeze, this would mutate `settled` and the
+			// payment_metered_settled log would diverge from the receipt.
+			setTimeout(() => c.var.settle(999_000n), 0);
+			return c.json({ ok: true });
+		});
+		const res = await app.request("/listen", {
+			method: "POST",
+			headers: { authorization: header },
+		});
+		// Give the setTimeout a chance to fire before we assert.
+		await new Promise((r) => setTimeout(r, 10));
+		const receipt = decodeReceipt(res.headers.get("Payment-Receipt")!);
+		expect(receipt.acceptedCumulative).toBe("20000");
+		const settled = events.find((e) => e.kind === "payment_metered_settled");
+		expect((settled as { actualAmountUsdcMicro: string }).actualAmountUsdcMicro).toBe("20000");
+		const lateIgnored = events.find(
+			(e) =>
+				e.kind === "payment_failed" &&
+				typeof (e as { reason?: unknown }).reason === "string" &&
+				(e as { reason: string }).reason.startsWith("metered_late_settle_ignored"),
+		);
+		expect(lateIgnored).toBeTruthy();
+	});
+
+	it("settle() called from a fire-and-forget async function is ignored", async () => {
+		// More realistic than setTimeout: an unawaited `async () => { ... }`
+		// that does work after the handler returns (e.g. uploading a copy of
+		// the response to a cache). The `await` boundary inside punts the
+		// continuation past `await next()` so the freeze catches it.
+		const events: Array<Record<string, unknown>> = [];
+		const logger = vi.fn(async (e) => {
+			events.push(e);
+		});
+		const { app, mpp } = makeApp(logger);
+		const { header } = await seedAndBuild(mpp, "metered-late-async", "listen:1", 200_000n);
+		app.post("/listen", mppMetered({ scope: "listen:1", maxAmount: 200_000n }), (c) => {
+			c.var.settle(30_000n);
+			// Fire-and-forget async work that calls settle after an I/O-like
+			// boundary. Real-world example: streaming the response to S3 in
+			// the background, then trying to settle the byte count.
+			void (async () => {
+				await new Promise((r) => setTimeout(r, 0));
+				c.var.settle(150_000n);
+			})();
+			return c.json({ ok: true });
+		});
+		const res = await app.request("/listen", {
+			method: "POST",
+			headers: { authorization: header },
+		});
+		await new Promise((r) => setTimeout(r, 10));
+		const receipt = decodeReceipt(res.headers.get("Payment-Receipt")!);
+		expect(receipt.acceptedCumulative).toBe("30000");
+		const lateIgnored = events.find(
+			(e) =>
+				e.kind === "payment_failed" &&
+				typeof (e as { reason?: unknown }).reason === "string" &&
+				(e as { reason: string }).reason.startsWith("metered_late_settle_ignored"),
+		);
+		expect(lateIgnored).toBeTruthy();
+	});
+});
+
 describe("mppMetered — payment_metered_settled log shape", () => {
 	it("contains both max and actual amounts plus channelId", async () => {
 		const events: Array<Record<string, unknown>> = [];
