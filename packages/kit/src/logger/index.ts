@@ -102,6 +102,14 @@ export type PaymentMeteredSettledEvent = PaywrapLogEventBase & {
 	actualAmountUsdcMicro: string;
 	/** True iff handler did not call `c.var.settle(...)` — fell back to max. */
 	fallback: boolean;
+	/**
+	 * True iff `c.req.raw.signal.aborted` was set when the middleware finished
+	 * settling. Combined with `fallback: true`, this means the request was
+	 * aborted by the client and the middleware defaulted `actualAmount` to
+	 * `0n` (not `maxAmount`). With `fallback: false`, the handler observed
+	 * the abort and explicitly called `settle(actual)`.
+	 */
+	aborted: boolean;
 	route: string;
 	scope?: string;
 	sku?: string;

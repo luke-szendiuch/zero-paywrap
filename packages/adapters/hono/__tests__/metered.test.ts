@@ -430,6 +430,98 @@ describe("mppMetered — late settle is frozen and ignored", () => {
 	});
 });
 
+describe("mppMetered — abort fallback", () => {
+	it("aborted request with no settle defaults to 0n, not maxAmount", async () => {
+		const events: Array<Record<string, unknown>> = [];
+		const logger = vi.fn(async (e) => {
+			events.push(e);
+		});
+		const { app, mpp } = makeApp(logger);
+		const { header } = await seedAndBuild(mpp, "metered-abort-zero", "listen:1", 200_000n);
+		const ac = new AbortController();
+		app.post("/listen", mppMetered({ scope: "listen:1", maxAmount: 200_000n }), async (c) => {
+			// Wait for abort, then return early WITHOUT calling settle.
+			await new Promise<void>((resolve) => {
+				if (c.req.raw.signal.aborted) return resolve();
+				c.req.raw.signal.addEventListener("abort", () => resolve(), { once: true });
+			});
+			return c.json({ ok: true });
+		});
+		const reqPromise = app.request("/listen", {
+			method: "POST",
+			headers: { authorization: header },
+			signal: ac.signal,
+		});
+		// Trigger abort once the handler is registered + waiting.
+		setTimeout(() => ac.abort(), 5);
+		const res = await reqPromise;
+		const receipt = decodeReceipt(res.headers.get("Payment-Receipt")!);
+		expect(receipt.acceptedCumulative).toBe("0");
+		const settled = events.find((e) => e.kind === "payment_metered_settled");
+		expect((settled as { aborted: boolean }).aborted).toBe(true);
+		expect((settled as { actualAmountUsdcMicro: string }).actualAmountUsdcMicro).toBe("0");
+	});
+
+	it("aborted request with explicit settle(actual) preserves the actual amount", async () => {
+		const { app, mpp } = makeApp();
+		const { header } = await seedAndBuild(mpp, "metered-abort-partial", "listen:1", 200_000n);
+		const ac = new AbortController();
+		app.post("/listen", mppMetered({ scope: "listen:1", maxAmount: 200_000n }), async (c) => {
+			// Simulate streaming: track "bytes served", settle partial on abort.
+			let bytesServed = 0n;
+			await new Promise<void>((resolve) => {
+				const tick = setInterval(() => {
+					bytesServed += 1_000n;
+				}, 1);
+				c.req.raw.signal.addEventListener(
+					"abort",
+					() => {
+						clearInterval(tick);
+						c.var.settle(bytesServed);
+						resolve();
+					},
+					{ once: true },
+				);
+			});
+			return c.json({ ok: true, bytesServed: bytesServed.toString() });
+		});
+		const reqPromise = app.request("/listen", {
+			method: "POST",
+			headers: { authorization: header },
+			signal: ac.signal,
+		});
+		setTimeout(() => ac.abort(), 15);
+		const res = await reqPromise;
+		const receipt = decodeReceipt(res.headers.get("Payment-Receipt")!);
+		// Receipt should be the partial bytes-served, not 0n and not maxAmount.
+		const accepted = BigInt((receipt.acceptedCumulative as string) ?? "0");
+		expect(accepted).toBeGreaterThan(0n);
+		expect(accepted).toBeLessThan(200_000n);
+	});
+
+	it("non-aborted request with no settle still falls back to maxAmount (unchanged)", async () => {
+		// Regression guard for the existing fallback contract.
+		const events: Array<Record<string, unknown>> = [];
+		const logger = vi.fn(async (e) => {
+			events.push(e);
+		});
+		const { app, mpp } = makeApp(logger);
+		const { header } = await seedAndBuild(mpp, "metered-abort-regression", "listen:1", 200_000n);
+		app.post("/listen", mppMetered({ scope: "listen:1", maxAmount: 200_000n }), (c) =>
+			c.json({ ok: true }),
+		);
+		const res = await app.request("/listen", {
+			method: "POST",
+			headers: { authorization: header },
+		});
+		const receipt = decodeReceipt(res.headers.get("Payment-Receipt")!);
+		expect(receipt.acceptedCumulative).toBe("200000");
+		const settled = events.find((e) => e.kind === "payment_metered_settled");
+		expect((settled as { aborted: boolean }).aborted).toBe(false);
+		expect((settled as { fallback: boolean }).fallback).toBe(true);
+	});
+});
+
 describe("mppMetered — payment_metered_settled log shape", () => {
 	it("contains both max and actual amounts plus channelId", async () => {
 		const events: Array<Record<string, unknown>> = [];

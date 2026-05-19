@@ -46,6 +46,13 @@ export type PaywrapMeteredVariables = PaywrapVariables & {
 	 * If `actualAmount > maxAmount`, the value is clamped to `maxAmount`
 	 * (the buyer's voucher only authorized up to maxAmount; we cannot bill
 	 * beyond what they signed). Clamping is logged with `clamped: true`.
+	 *
+	 * **Streaming + abort:** for SSE / chunked responses, observe
+	 * `c.req.raw.signal` and call `settle(actualBytesServed * pricePerByte)`
+	 * from your abort handler before the handler returns. If the request
+	 * aborts and the handler never calls `settle`, the middleware defaults
+	 * to `0n` (not `maxAmount`) — the buyer disconnected, they received
+	 * nothing of value.
 	 */
 	settle: (actualAmount: bigint) => void;
 	/**
@@ -338,8 +345,15 @@ export const mppMetered = (
 		await next();
 		frozen = true;
 
+		// Streaming-abort fallback: if the client disconnected mid-handler and
+		// the handler didn't call settle, default the actual to `0n` (buyer
+		// received nothing of value) instead of `maxAmount`. Handlers that
+		// want to bill partial work on abort should observe `c.req.raw.signal`
+		// themselves and call `settle(actualUsage)` in their abort path —
+		// this fallback only catches the "handler didn't observe abort" case.
+		const signalAborted = c.req.raw.signal?.aborted ?? false;
 		const fallback = settled === null;
-		const rawActual = settled ?? opts.maxAmount;
+		const rawActual = settled ?? (signalAborted ? 0n : opts.maxAmount);
 		// Clamp upward at maxAmount — the buyer's voucher only covers max,
 		// any excess is the seller's bug or the seller's gift. Logged.
 		const clamped = rawActual > opts.maxAmount;
@@ -407,6 +421,7 @@ export const mppMetered = (
 			maxAmountUsdcMicro: opts.maxAmount.toString(),
 			actualAmountUsdcMicro: finalAmount.toString(),
 			fallback,
+			aborted: signalAborted,
 			route,
 			scope: opts.scope,
 			...(opts.meta?.sku ? { sku: opts.meta.sku } : {}),
