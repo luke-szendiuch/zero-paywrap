@@ -141,6 +141,88 @@ describe("mppMetered — handler forgets to call settle", () => {
 	});
 });
 
+describe("mppMetered — failed responses without settle", () => {
+	it("settles 0 instead of maxAmount when the handler returns an error response", async () => {
+		const events: Array<Record<string, unknown>> = [];
+		const logger = vi.fn(async (e) => {
+			events.push(e);
+		});
+		const { app, mpp } = makeApp(logger);
+		const { channelId, header } = await seedAndBuild(
+			mpp,
+			"metered-error-response",
+			"listen:1",
+			200_000n,
+		);
+		app.post("/listen", mppMetered({ scope: "listen:1", maxAmount: 200_000n }), (c) =>
+			c.json({ error: "upstream_failed" }, 422),
+		);
+
+		const res = await app.request("/listen", {
+			method: "POST",
+			headers: { authorization: header },
+		});
+
+		expect(res.status).toBe(422);
+		const receipt = decodeReceipt(res.headers.get("Payment-Receipt")!);
+		expect(receipt.acceptedCumulative).toBe("0");
+		expect(receipt.spent).toBe("0");
+		const channel = await mpp.channelStore.getChannel(channelId);
+		expect(channel?.spent).toBe(0n);
+		const settled = events.find((e) => e.kind === "payment_metered_settled");
+		expect(settled).toMatchObject({
+			actualAmountUsdcMicro: "0",
+			fallback: true,
+		});
+	});
+
+	it("settles 0 instead of maxAmount when the handler throws", async () => {
+		const { app, mpp } = makeApp();
+		const { channelId, header } = await seedAndBuild(mpp, "metered-throw", "listen:1", 200_000n);
+		app.post("/listen", mppMetered({ scope: "listen:1", maxAmount: 200_000n }), () => {
+			throw new Error("upstream exploded");
+		});
+		app.onError((_err, c) => c.json({ error: "internal" }, 500));
+
+		const res = await app.request("/listen", {
+			method: "POST",
+			headers: { authorization: header },
+		});
+
+		expect(res.status).toBe(500);
+		const receipt = decodeReceipt(res.headers.get("Payment-Receipt")!);
+		expect(receipt.acceptedCumulative).toBe("0");
+		const channel = await mpp.channelStore.getChannel(channelId);
+		expect(channel?.spent).toBe(0n);
+	});
+
+	it("preserves an explicit handler settlement even when the response is an error", async () => {
+		const { app, mpp } = makeApp();
+		const { channelId, header } = await seedAndBuild(
+			mpp,
+			"metered-error-explicit",
+			"listen:1",
+			200_000n,
+		);
+		app.post("/listen", mppMetered({ scope: "listen:1", maxAmount: 200_000n }), (c) => {
+			c.var.settle(7_500n);
+			return c.json({ error: "partial_failure" }, 422);
+		});
+
+		const res = await app.request("/listen", {
+			method: "POST",
+			headers: { authorization: header },
+		});
+
+		expect(res.status).toBe(422);
+		const receipt = decodeReceipt(res.headers.get("Payment-Receipt")!);
+		expect(receipt.acceptedCumulative).toBe("7500");
+		expect(receipt.spent).toBe("7500");
+		const channel = await mpp.channelStore.getChannel(channelId);
+		expect(channel?.spent).toBe(7_500n);
+	});
+});
+
 describe("mppMetered — handler tries to overcharge", () => {
 	it("clamps to maxAmount and logs payment_failed", async () => {
 		const events: Array<Record<string, unknown>> = [];

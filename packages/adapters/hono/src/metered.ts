@@ -301,10 +301,27 @@ export const mppMetered = (
 		c.set("verifiedCredential", verified);
 		c.set("settle", settle);
 
-		await next();
+		let handlerError: unknown = undefined;
+		let caughtHandlerError = false;
+		try {
+			await next();
+		} catch (err) {
+			handlerError = err;
+			caughtHandlerError = true;
+		}
+		if (handlerError === undefined && c.error !== undefined) {
+			handlerError = c.error;
+		}
 
+		const responseFailed = handlerError !== undefined || (c.res?.status ?? 0) >= 400;
 		const fallback = settled === null;
-		const rawActual = settled ?? opts.maxAmount;
+		// On successful responses, forgetting to call settle still falls back
+		// to maxAmount so the seller is not silently underpaid. On failed
+		// responses, the same omission closes at zero so validation/upstream
+		// errors don't overbill the buyer by default. A handler that wants to
+		// bill a partial failure can still call settle(actual); explicit
+		// settlement always wins.
+		const rawActual = settled !== null ? settled : responseFailed ? 0n : opts.maxAmount;
 		// Clamp upward at maxAmount — the buyer's voucher only covers max,
 		// any excess is the seller's bug or the seller's gift. Logged.
 		const clamped = rawActual > opts.maxAmount;
@@ -386,6 +403,9 @@ export const mppMetered = (
 				scope: opts.scope,
 				route,
 			});
+		}
+		if (caughtHandlerError) {
+			throw handlerError;
 		}
 	};
 };

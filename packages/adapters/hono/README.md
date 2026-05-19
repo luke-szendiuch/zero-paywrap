@@ -507,6 +507,6 @@ app.post(
 
 The middleware emits a `Payment-Receipt` header with the actual amount; the buyer countersigns a close voucher and POSTs it to a close endpoint your service exposes. Persist that voucher with `persistMeteredCloseVoucher` and submit it on-chain from a scheduled handler with `closeMeteredChannelFromState` (both from `@zeroclickai/paywrap/mpp/metered`).
 
-If the handler forgets to call `settle`, the middleware bills `maxAmount` and emits a `payment_failed` event with `stage: "settle"` — the buyer is over-billed. Always settle.
+If the handler forgets to call `settle` on a successful response, the middleware bills `maxAmount` and logs `payment_metered_settled` with `fallback: true` — the buyer is over-billed. Always settle. If the response fails (`status >= 400`) or the handler throws before settling, the middleware closes at `0` instead so validation and upstream failures do not consume payment by default.
 
 See the [Service Builder Guide § Metered](../../kit/docs/service-builder-guide.md#metered--detail) for the full persist → reap → close flow.
