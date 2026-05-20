@@ -377,7 +377,7 @@ app.post(
 );
 ```
 
-If the handler forgets to call `settle`, the middleware falls back to billing `maxAmount` and emits a `payment_failed` event with `stage: "settle"` and `reason: "metered_fallback"` — the buyer is over-billed but the channel still closes. Always call `settle`.
+If the handler forgets to call `settle` on a successful response, the middleware falls back to billing `maxAmount` and logs `payment_metered_settled` with `fallback: true` — the buyer is over-billed but the channel still closes. Always call `settle`. If the response fails (`status >= 400`), the handler throws, or the request aborts before an explicit settlement, the middleware closes at `0` instead so validation and upstream failures do not consume payment by default.
 
 #### 2. Persist the close voucher when the buyer countersigns
 

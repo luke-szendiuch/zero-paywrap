@@ -19,9 +19,12 @@ import type { PaywrapVariables } from "./gated.js";
 /**
  * Hono variables `mppMetered` adds on top of the `mppGated` shape. Handlers
  * MUST call `settle(actualAmount)` before returning so the middleware can
- * emit the `Payment-Receipt` header at the resolved cost. If they forget,
- * the middleware falls back to `maxAmount` and logs a `fallback: true` event
- * so we can audit the bug.
+ * emit the `Payment-Receipt` header at the resolved cost. If they forget on
+ * a successful response, the middleware falls back to `maxAmount` and logs a
+ * `fallback: true` event so we can audit the bug. If they forget on a failed
+ * response, thrown handler, or aborted request, the middleware settles `0n`
+ * by default so validation/upstream failures do not consume the buyer's
+ * escrow.
  *
  * Augment Hono's variables to type-narrow:
  *   const app = new Hono<{ Variables: PaywrapMeteredVariables }>()
@@ -342,7 +345,17 @@ export const mppMetered = (
 		c.set("verifiedCredential", verified);
 		c.set("settle", settle);
 
-		await next();
+		let handlerError: unknown = undefined;
+		let caughtHandlerError = false;
+		try {
+			await next();
+		} catch (err) {
+			handlerError = err;
+			caughtHandlerError = true;
+		}
+		if (handlerError === undefined && c.error !== undefined) {
+			handlerError = c.error;
+		}
 		frozen = true;
 
 		// Streaming-abort fallback: if the client disconnected mid-handler and
@@ -352,8 +365,13 @@ export const mppMetered = (
 		// themselves and call `settle(actualUsage)` in their abort path —
 		// this fallback only catches the "handler didn't observe abort" case.
 		const signalAborted = c.req.raw.signal?.aborted ?? false;
+		const responseFailed = handlerError !== undefined || (c.res?.status ?? 0) >= 400;
 		const fallback = settled === null;
-		const rawActual = settled ?? (signalAborted ? 0n : opts.maxAmount);
+		// Explicit settlement always wins. Otherwise, successful responses keep
+		// the existing maxAmount fallback so the seller is not silently
+		// underpaid, while failed responses and aborted requests close at zero
+		// so validation/upstream failures do not overbill the buyer by default.
+		const rawActual = settled ?? (responseFailed || signalAborted ? 0n : opts.maxAmount);
 		// Clamp upward at maxAmount — the buyer's voucher only covers max,
 		// any excess is the seller's bug or the seller's gift. Logged.
 		const clamped = rawActual > opts.maxAmount;
@@ -440,6 +458,9 @@ export const mppMetered = (
 				scope: opts.scope,
 				route,
 			});
+		}
+		if (caughtHandlerError) {
+			throw handlerError;
 		}
 	};
 };
