@@ -100,14 +100,23 @@ export type PaymentMeteredSettledEvent = PaywrapLogEventBase & {
 	seller: Hex;
 	maxAmountUsdcMicro: string;
 	actualAmountUsdcMicro: string;
-	/** True iff handler did not call `c.var.settle(...)` — fell back to max. */
+	/** True iff handler did not call `c.var.settle(...)`. */
 	fallback: boolean;
 	/**
+	 * Distinguishes the fallback path so "handler forgot settle on success"
+	 * remains greppable separately from protected error/abort fallbacks.
+	 * - `success_max` — successful response with no settle; billed maxAmount.
+	 * - `error_zero` — failed response / handler error with no settle; billed 0.
+	 * - `abort_zero` — aborted request with no settle; billed 0.
+	 * - `null` — handler explicitly called settle.
+	 */
+	fallbackKind: "success_max" | "error_zero" | "abort_zero" | null;
+	/**
 	 * True iff `c.req.raw.signal.aborted` was set when the middleware finished
-	 * settling. Combined with `fallback: true`, this means the request was
-	 * aborted by the client and the middleware defaulted `actualAmount` to
-	 * `0n` (not `maxAmount`). With `fallback: false`, the handler observed
-	 * the abort and explicitly called `settle(actual)`.
+	 * settling. `fallbackKind: "abort_zero"` means the request was aborted by
+	 * the client and the middleware defaulted `actualAmount` to `0n` (not
+	 * `maxAmount`). With `fallback: false`, the handler observed the abort
+	 * and explicitly called `settle(actual)`.
 	 */
 	aborted: boolean;
 	route: string;

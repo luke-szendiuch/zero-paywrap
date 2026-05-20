@@ -21,10 +21,10 @@ import type { PaywrapVariables } from "./gated.js";
  * MUST call `settle(actualAmount)` before returning so the middleware can
  * emit the `Payment-Receipt` header at the resolved cost. If they forget on
  * a successful response, the middleware falls back to `maxAmount` and logs a
- * `fallback: true` event so we can audit the bug. If they forget on a failed
- * response, thrown handler, or aborted request, the middleware settles `0n`
- * by default so validation/upstream failures do not consume the buyer's
- * escrow.
+ * `fallbackKind: "success_max"` event so we can audit the bug. If they
+ * forget on a failed response, thrown handler, or aborted request, the
+ * middleware settles `0n` by default so validation/upstream failures do not
+ * consume the buyer's escrow.
  *
  * Augment Hono's variables to type-narrow:
  *   const app = new Hono<{ Variables: PaywrapMeteredVariables }>()
@@ -354,107 +354,138 @@ export const mppMetered = (
 			caughtHandlerError = true;
 		}
 		if (handlerError === undefined && c.error !== undefined) {
+			// Hono's onError path can convert a downstream throw into a
+			// Response without rejecting `next()`. It stashes the original
+			// error on c.error; treat that as a failed response for settlement.
 			handlerError = c.error;
 		}
 		frozen = true;
 
-		// Streaming-abort fallback: if the client disconnected mid-handler and
-		// the handler didn't call settle, default the actual to `0n` (buyer
-		// received nothing of value) instead of `maxAmount`. Handlers that
-		// want to bill partial work on abort should observe `c.req.raw.signal`
-		// themselves and call `settle(actualUsage)` in their abort path —
-		// this fallback only catches the "handler didn't observe abort" case.
-		const signalAborted = c.req.raw.signal?.aborted ?? false;
-		const responseFailed = handlerError !== undefined || (c.res?.status ?? 0) >= 400;
-		const fallback = settled === null;
-		// Explicit settlement always wins. Otherwise, successful responses keep
-		// the existing maxAmount fallback so the seller is not silently
-		// underpaid, while failed responses and aborted requests close at zero
-		// so validation/upstream failures do not overbill the buyer by default.
-		const rawActual = settled ?? (responseFailed || signalAborted ? 0n : opts.maxAmount);
-		// Clamp upward at maxAmount — the buyer's voucher only covers max,
-		// any excess is the seller's bug or the seller's gift. Logged.
-		const clamped = rawActual > opts.maxAmount;
-		const finalAmount = clamped ? opts.maxAmount : rawActual < 0n ? 0n : rawActual;
-		// Expose the canonical settled amount on c.var so outer middlewares
-		// (usage loggers, billing rollups) can read the same value the
-		// receipt encodes without re-implementing the clamp/floor logic.
-		c.set("settledAmount", finalAmount);
+		try {
+			// Streaming-abort fallback: if the client disconnected mid-handler and
+			// the handler didn't call settle, default the actual to `0n` (buyer
+			// received nothing of value) instead of `maxAmount`. Handlers that
+			// want to bill partial work on abort should observe `c.req.raw.signal`
+			// themselves and call `settle(actualUsage)` in their abort path —
+			// this fallback only catches the "handler didn't observe abort" case.
+			const signalAborted = c.req.raw.signal?.aborted ?? false;
+			const responseFailed = handlerError !== undefined || (c.res?.status ?? 0) >= 400;
+			const fallback = settled === null;
+			const fallbackKind =
+				settled !== null
+					? null
+					: signalAborted
+						? "abort_zero"
+						: responseFailed
+							? "error_zero"
+							: "success_max";
+			// Explicit settlement always wins. Otherwise, successful responses keep
+			// the existing maxAmount fallback so the seller is not silently
+			// underpaid, while failed responses and aborted requests close at zero
+			// so validation/upstream failures do not overbill the buyer by default.
+			const rawActual = settled ?? (fallbackKind === "success_max" ? opts.maxAmount : 0n);
+			// Clamp upward at maxAmount — the buyer's voucher only covers max,
+			// any excess is the seller's bug or the seller's gift. Logged.
+			const clamped = rawActual > opts.maxAmount;
+			const finalAmount = clamped ? opts.maxAmount : rawActual < 0n ? 0n : rawActual;
+			// Expose the canonical settled amount on c.var so outer middlewares
+			// (usage loggers, billing rollups) can read the same value the
+			// receipt encodes without re-implementing the clamp/floor logic.
+			c.set("settledAmount", finalAmount);
 
-		const ids = readCredentialIds(credential);
-		if (ids.channelId && ids.challengeId) {
-			const receipt: SessionReceiptPayload = {
-				channelId: ids.channelId,
-				challengeId: ids.challengeId,
-				acceptedCumulative: finalAmount.toString(),
-				spent: finalAmount.toString(),
-				// Tells the buyer's CLI to skip the open-time deposit floor and
-				// sign close at `acceptedCumulative` (= the metered actual).
-				// Without this, CLIs default to the safer max(receipt, deposit)
-				// policy and the refund silently doesn't happen.
-				metered: true,
-			};
-			c.header("Payment-Receipt", encodeSessionReceipt(receipt));
-			// Overwrite mppx's auto-charge of channel.spent (which always
-			// charges request.amount = maxAmount per voucher) with the
-			// metered actual. Without this, when the buyer's CLI later
-			// posts a close voucher at `actual`, mppx's handleClose rejects
-			// it ("close voucher amount must be >= <maxAmount> (spent)").
-			// Last-write-wins: if the handler called settle() multiple times,
-			// we use the final value, matching the receipt above.
-			try {
-				await app.ctx.mppxChannelStore.updateChannel(ids.channelId as Hex, (current) => {
-					if (!current) return null;
-					if (current.finalized) return current;
-					return { ...current, spent: finalAmount };
-				});
-			} catch (err) {
+			const ids = readCredentialIds(credential);
+			if (ids.channelId && ids.challengeId) {
+				const receipt: SessionReceiptPayload = {
+					channelId: ids.channelId,
+					challengeId: ids.challengeId,
+					acceptedCumulative: finalAmount.toString(),
+					spent: finalAmount.toString(),
+					// Tells the buyer's CLI to skip the open-time deposit floor and
+					// sign close at `acceptedCumulative` (= the metered actual).
+					// Without this, CLIs default to the safer max(receipt, deposit)
+					// policy and the refund silently doesn't happen.
+					metered: true,
+				};
+				c.header("Payment-Receipt", encodeSessionReceipt(receipt));
+				// Overwrite mppx's auto-charge of channel.spent (which always
+				// charges request.amount = maxAmount per voucher) with the
+				// metered actual. Without this, when the buyer's CLI later
+				// posts a close voucher at `actual`, mppx's handleClose rejects
+				// it ("close voucher amount must be >= <maxAmount> (spent)").
+				// Last-write-wins: if the handler called settle() multiple times,
+				// we use the final value, matching the receipt above.
+				try {
+					await app.ctx.mppxChannelStore.updateChannel(ids.channelId as Hex, (current) => {
+						if (!current) return null;
+						if (current.finalized) return current;
+						return { ...current, spent: finalAmount };
+					});
+				} catch (err) {
+					await safeLog(logger, {
+						v: 1,
+						kind: "payment_failed",
+						timestamp: new Date().toISOString(),
+						protocol: "mpp",
+						stage: "settle",
+						reason:
+							err instanceof Error
+								? `metered_spent_override_failed:${err.message}`
+								: "metered_spent_override_failed",
+						scope: opts.scope,
+						route,
+					});
+				}
+			}
+			// If channelId/challengeId are missing the credential isn't a session
+			// voucher — that should be impossible after verifyWithScope on a session
+			// scope, but we don't crash the response over it. Logged below.
+
+			const fp = shortFingerprint(await fingerprintCredential(header ?? ""));
+			await safeLog(logger, {
+				v: 1,
+				kind: "payment_metered_settled",
+				timestamp: new Date().toISOString(),
+				protocol: "mpp",
+				payer,
+				seller: app.ctx.mppx?.account?.address ?? ("0x" as Hex),
+				maxAmountUsdcMicro: opts.maxAmount.toString(),
+				actualAmountUsdcMicro: finalAmount.toString(),
+				fallback,
+				fallbackKind,
+				aborted: signalAborted,
+				route,
+				scope: opts.scope,
+				...(opts.meta?.sku ? { sku: opts.meta.sku } : {}),
+				latencyMs: Date.now() - startedAt,
+				credentialFingerprint: fp,
+				...(ids.channelId ? { channelId: ids.channelId } : {}),
+			});
+			if (clamped) {
 				await safeLog(logger, {
 					v: 1,
 					kind: "payment_failed",
 					timestamp: new Date().toISOString(),
 					protocol: "mpp",
 					stage: "settle",
-					reason:
-						err instanceof Error
-							? `metered_spent_override_failed:${err.message}`
-							: "metered_spent_override_failed",
+					reason: `metered_actual_exceeded_max:${rawActual}>${opts.maxAmount}`,
 					scope: opts.scope,
 					route,
 				});
 			}
-		}
-		// If channelId/challengeId are missing the credential isn't a session
-		// voucher — that should be impossible after verifyWithScope on a session
-		// scope, but we don't crash the response over it. Logged below.
-
-		const fp = shortFingerprint(await fingerprintCredential(header ?? ""));
-		await safeLog(logger, {
-			v: 1,
-			kind: "payment_metered_settled",
-			timestamp: new Date().toISOString(),
-			protocol: "mpp",
-			payer,
-			seller: app.ctx.mppx?.account?.address ?? ("0x" as Hex),
-			maxAmountUsdcMicro: opts.maxAmount.toString(),
-			actualAmountUsdcMicro: finalAmount.toString(),
-			fallback,
-			aborted: signalAborted,
-			route,
-			scope: opts.scope,
-			...(opts.meta?.sku ? { sku: opts.meta.sku } : {}),
-			latencyMs: Date.now() - startedAt,
-			credentialFingerprint: fp,
-			...(ids.channelId ? { channelId: ids.channelId } : {}),
-		});
-		if (clamped) {
+		} catch (err) {
+			if (handlerError === undefined) {
+				throw err;
+			}
 			await safeLog(logger, {
 				v: 1,
 				kind: "payment_failed",
 				timestamp: new Date().toISOString(),
 				protocol: "mpp",
 				stage: "settle",
-				reason: `metered_actual_exceeded_max:${rawActual}>${opts.maxAmount}`,
+				reason:
+					err instanceof Error
+						? `metered_post_settle_failed:${err.message}`
+						: "metered_post_settle_failed",
 				scope: opts.scope,
 				route,
 			});

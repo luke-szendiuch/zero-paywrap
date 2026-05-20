@@ -117,7 +117,7 @@ describe("mppMetered — happy path (handler calls settle)", () => {
 });
 
 describe("mppMetered — handler forgets to call settle", () => {
-	it("falls back to maxAmount and logs fallback:true", async () => {
+	it("falls back to maxAmount and logs a success_max fallback", async () => {
 		const events: Array<Record<string, unknown>> = [];
 		const logger = vi.fn(async (e) => {
 			events.push(e);
@@ -137,6 +137,7 @@ describe("mppMetered — handler forgets to call settle", () => {
 		const settled = events.find((e) => e.kind === "payment_metered_settled");
 		expect(settled).toBeTruthy();
 		expect((settled as { fallback: boolean }).fallback).toBe(true);
+		expect((settled as { fallbackKind: string }).fallbackKind).toBe("success_max");
 		expect((settled as { actualAmountUsdcMicro: string }).actualAmountUsdcMicro).toBe("200000");
 	});
 });
@@ -173,12 +174,17 @@ describe("mppMetered — failed responses without settle", () => {
 		expect(settled).toMatchObject({
 			actualAmountUsdcMicro: "0",
 			fallback: true,
+			fallbackKind: "error_zero",
 			aborted: false,
 		});
 	});
 
-	it("settles 0 instead of maxAmount when the handler throws", async () => {
-		const { app, mpp } = makeApp();
+	it("settles 0 when onError handles a thrown handler without explicit settle", async () => {
+		const events: Array<Record<string, unknown>> = [];
+		const logger = vi.fn(async (e) => {
+			events.push(e);
+		});
+		const { app, mpp } = makeApp(logger);
 		const { channelId, header } = await seedAndBuild(mpp, "metered-throw", "listen:1", 200_000n);
 		app.post("/listen", mppMetered({ scope: "listen:1", maxAmount: 200_000n }), () => {
 			throw new Error("upstream exploded");
@@ -196,6 +202,13 @@ describe("mppMetered — failed responses without settle", () => {
 		expect(receipt.spent).toBe("0");
 		const channel = await mpp.channelStore.getChannel(channelId);
 		expect(channel?.spent).toBe(0n);
+		const settled = events.find((e) => e.kind === "payment_metered_settled");
+		expect(settled).toMatchObject({
+			actualAmountUsdcMicro: "0",
+			fallback: true,
+			fallbackKind: "error_zero",
+			aborted: false,
+		});
 	});
 
 	it("preserves an explicit handler settlement even when the response is an error", async () => {
@@ -222,6 +235,44 @@ describe("mppMetered — failed responses without settle", () => {
 		expect(receipt.spent).toBe("7500");
 		const channel = await mpp.channelStore.getChannel(channelId);
 		expect(channel?.spent).toBe(7_500n);
+	});
+
+	it("preserves an explicit handler settlement even when the handler later throws", async () => {
+		const events: Array<Record<string, unknown>> = [];
+		const logger = vi.fn(async (e) => {
+			events.push(e);
+		});
+		const { app, mpp } = makeApp(logger);
+		const { channelId, header } = await seedAndBuild(
+			mpp,
+			"metered-throw-explicit",
+			"listen:1",
+			200_000n,
+		);
+		app.post("/listen", mppMetered({ scope: "listen:1", maxAmount: 200_000n }), (c) => {
+			c.var.settle(7_500n);
+			throw new Error("upstream exploded after settle");
+		});
+		app.onError((_err, c) => c.json({ error: "internal" }, 500));
+
+		const res = await app.request("/listen", {
+			method: "POST",
+			headers: { authorization: header },
+		});
+
+		expect(res.status).toBe(500);
+		const receipt = decodeReceipt(res.headers.get("Payment-Receipt")!);
+		expect(receipt.acceptedCumulative).toBe("7500");
+		expect(receipt.spent).toBe("7500");
+		const channel = await mpp.channelStore.getChannel(channelId);
+		expect(channel?.spent).toBe(7_500n);
+		const settled = events.find((e) => e.kind === "payment_metered_settled");
+		expect(settled).toMatchObject({
+			actualAmountUsdcMicro: "7500",
+			fallback: false,
+			fallbackKind: null,
+			aborted: false,
+		});
 	});
 });
 
@@ -543,11 +594,17 @@ describe("mppMetered — abort fallback", () => {
 		expect(receipt.acceptedCumulative).toBe("0");
 		const settled = events.find((e) => e.kind === "payment_metered_settled");
 		expect((settled as { aborted: boolean }).aborted).toBe(true);
+		expect((settled as { fallback: boolean }).fallback).toBe(true);
+		expect((settled as { fallbackKind: string }).fallbackKind).toBe("abort_zero");
 		expect((settled as { actualAmountUsdcMicro: string }).actualAmountUsdcMicro).toBe("0");
 	});
 
 	it("aborted request with explicit settle(actual) preserves the actual amount", async () => {
-		const { app, mpp } = makeApp();
+		const events: Array<Record<string, unknown>> = [];
+		const logger = vi.fn(async (e) => {
+			events.push(e);
+		});
+		const { app, mpp } = makeApp(logger);
 		const { header } = await seedAndBuild(mpp, "metered-abort-partial", "listen:1", 200_000n);
 		const ac = new AbortController();
 		app.post("/listen", mppMetered({ scope: "listen:1", maxAmount: 200_000n }), async (c) => {
@@ -581,6 +638,13 @@ describe("mppMetered — abort fallback", () => {
 		const accepted = BigInt((receipt.acceptedCumulative as string) ?? "0");
 		expect(accepted).toBeGreaterThan(0n);
 		expect(accepted).toBeLessThan(200_000n);
+		const settled = events.find((e) => e.kind === "payment_metered_settled");
+		expect(settled).toMatchObject({
+			actualAmountUsdcMicro: accepted.toString(),
+			fallback: false,
+			fallbackKind: null,
+			aborted: true,
+		});
 	});
 
 	it("non-aborted request with no settle still falls back to maxAmount (unchanged)", async () => {
@@ -603,6 +667,7 @@ describe("mppMetered — abort fallback", () => {
 		const settled = events.find((e) => e.kind === "payment_metered_settled");
 		expect((settled as { aborted: boolean }).aborted).toBe(false);
 		expect((settled as { fallback: boolean }).fallback).toBe(true);
+		expect((settled as { fallbackKind: string }).fallbackKind).toBe("success_max");
 	});
 });
 
@@ -630,6 +695,7 @@ describe("mppMetered — payment_metered_settled log shape", () => {
 			maxAmountUsdcMicro: "200000",
 			actualAmountUsdcMicro: "33000",
 			fallback: false,
+			fallbackKind: null,
 			sku: "deepgram-listen:v1",
 			channelId,
 		});
